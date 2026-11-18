@@ -8,7 +8,7 @@
   "scripts": {
     "start": "node server/src/index.ts",
     "dev": "DEV_LOGIN=1 node --watch server/src/index.ts",
-    "test": "node --test server/test/",
+    "test": "node --test \"server/test/*.test.ts\"",
     "demo:seed": "node scripts/demo-seed.ts",
     "demo": "DEV_LOGIN=1 ALLOWED_EMAILS=deniz@demo.local:Deniz,ece@demo.local:Ece DB_PATH=data/demo.db node server/src/index.ts"
   },
