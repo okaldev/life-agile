@@ -1,0 +1,23 @@
+# Life Agile. Start: `docker compose up -d`, then open http://localhost:8080 (see README.md).
+# Settings come from .env (optional, see .env.example). Data lives in ./data (SQLite + backups).
+services:
+  life-agile:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: life-agile:latest
+    container_name: life_agile
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+    volumes:
+      - ./data:/app/data
+    mem_limit: 256m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "2"

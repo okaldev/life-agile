@@ -1,0 +1,8 @@
+---
+import Base from "@/layouts/Base.astro";
+import LoginPage from "@/components/app/LoginPage";
+---
+
+<Base title="Kurulum">
+  <LoginPage client:only="react" mode="setup" />
+</Base>

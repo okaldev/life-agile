@@ -1,0 +1,8 @@
+---
+import Base from "@/layouts/Base.astro";
+import App from "@/components/app/App";
+---
+
+<Base title="Takvim">
+  <App client:only="react" page="calendar" />
+</Base>
