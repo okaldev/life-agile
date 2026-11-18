@@ -10,7 +10,7 @@ DEV_LOGIN=1 node --watch server/src/index.ts     # API + static on :8080 (dev lo
 npm --prefix web run dev                         # Astro dev on :4321, proxies /api and /auth to :8080
 npm test                                         # server unit tests (node --test)
 npm --prefix web run build                       # astro check + build to web/dist
-scripts/ship.sh -m "feat: ..." files...          # test, build, commit, deploy, verify
+scripts/ship.sh -m "feat: ..." files...          # test, build, commit, push, wait for CI deploy, verify
 ```
 
 ## Architecture (short)
@@ -19,4 +19,4 @@ scripts/ship.sh -m "feat: ..." files...          # test, build, commit, deploy, 
 - `web/`: Astro static pages, each mounts the React `App` island with a page name. shadcn/ui in `web/src/components/ui`.
 - `shared/types.ts`: DTOs for both sides.
 - Realtime: SSE `/api/events`, in-memory hub. Planning wizard state is the `planning_step` of the planned sprint.
-- Deploy: `docker compose up -d --build` (see `openwiki/deploy.md`). Maintainer server details: `deploy.local/DEPLOY.md` (not in git).
+- Deploy: a push to `main` deploys through GitHub Actions and `scripts/deploy-server.sh` (see `openwiki/deploy.md`). Maintainer server details: `deploy.local/DEPLOY.md` (not in git).

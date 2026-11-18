@@ -82,6 +82,24 @@ npm test                                       # server tests
 
 `npm run demo:seed` creates `data/demo.db` with sample data (see README).
 
-## Maintainer deploy script
+## Automatic deploy (maintainer)
 
-`scripts/ship.sh` tests, builds, commits and deploys to one server over SSH. The target comes from `deploy.local/ship.env` (not in git; `HOST`, `REMOTE_DIR`, `CONTAINER`, `SITE_URL`). It copies `deploy.local/docker-compose.override.yml` to the server, never touches the server `data/` or `.env`, and takes a `VACUUM INTO` backup (`data/backups/pre-deploy-*.db`, keeps 10) before every deploy. Flags: `--no-deploy`, `--deploy-only`, `--no-test`, `-b "body"`.
+`.github/workflows/ci.yml` runs the tests, the type check and the web build on every push and pull request. A push to `main` of `okaldev/life-agile` then runs the `deploy` job:
+
+1. The job runs only on `main`, only in the `production` GitHub environment (branch policy: `main` only), only when the repo variable `DEPLOY_ENABLED` is `true` (the on/off switch), one at a time (`concurrency: production`).
+2. It connects over SSH with a deploy key from the environment secrets (`DEPLOY_SSH_KEY`, `DEPLOY_HOST`, `DEPLOY_PORT`, `DEPLOY_USER`, `DEPLOY_KNOWN_HOSTS`; strict host key check).
+3. On the server, `authorized_keys` binds that key to one forced command: `scripts/deploy-server.sh` (`no-pty`, no forwarding). The key cannot open a shell. It sends `deploy <sha>`.
+4. `scripts/deploy-server.sh` (the server folder is a git clone of the public repo):
+   - takes a lock, fetches `origin/main` over HTTPS (no credentials), refuses a SHA that is not on `main`;
+   - writes `data/backups/pre-deploy-<UTC>.db` with `VACUUM INTO` (keeps 10) and tags the running image `life-agile:previous`;
+   - checks out the SHA, runs `docker compose up -d --build`, and checks `/api/health` inside the container;
+   - on failure: checks out the previous commit, starts `life-agile:previous`, and logs to `data/deploy.log`.
+   - It never touches `data/`, `.env`, `docker-compose.override.yml` and never runs `git clean`.
+
+Pull requests and forks never get the secrets (`pull_request` events have no secrets; `pull_request_target` is not used). Workflows from outside contributors need approval. `main` blocks force pushes and deletion.
+
+Stop automatic deploys: set `DEPLOY_ENABLED` to `false`. Revoke the key: remove its line from the server `authorized_keys`.
+
+## Maintainer script
+
+`scripts/ship.sh` tests, builds, commits, pushes `main`, waits for the CI run (`gh run watch`) and checks `SITE_URL` from `deploy.local/ship.env` (not in git). `--direct` deploys over the maintainer's own SSH key (`ssh HOST REMOTE_DIR/scripts/deploy-server.sh <sha>`) when GitHub Actions is down. Flags: `--no-deploy`, `--deploy-only`, `--no-test`, `--direct`, `-b "body"`.

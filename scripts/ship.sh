@@ -1,30 +1,26 @@
 #!/usr/bin/env bash
-# Commit + deploy in one command, with short output.
+# Commit + push (+ wait for the automatic deploy) in one command, with short output.
 #
 # Usage:
-#   scripts/ship.sh -m "feat: message" [file ...]   # test, build, commit the files, deploy, verify
+#   scripts/ship.sh -m "feat: message" [file ...]   # test, build, commit the files, push, wait for CI deploy, verify
 #   scripts/ship.sh -m "fix: x" -b "body text" a.ts # add a commit body
-#   scripts/ship.sh --no-deploy -m "docs: x" f.md   # commit only
-#   scripts/ship.sh --deploy-only                   # deploy the current tree, no commit
+#   scripts/ship.sh --no-deploy -m "docs: x" f.md   # commit only (no push)
+#   scripts/ship.sh --deploy-only                   # push what is committed, wait for the deploy
+#   scripts/ship.sh --direct ...                    # emergency: deploy over the maintainer SSH key instead of CI
 #   scripts/ship.sh --no-test ...                   # skip tests and web build
 #
 # With no files, the script commits what is already staged.
-# It never touches the server data/ directory or .env.
-#
-# This is the maintainer's deploy script. The target comes from deploy.local/ship.env (not in git):
-#   HOST, REMOTE_DIR, CONTAINER, SITE_URL
-# deploy.local/docker-compose.override.yml (optional) is copied to the server as docker-compose.override.yml.
+# A push to main starts .github/workflows/ci.yml: tests, then scripts/deploy-server.sh on the server.
+# Maintainer settings come from deploy.local/ship.env (not in git): HOST, REMOTE_DIR, CONTAINER, SITE_URL.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 HOST="" REMOTE_DIR="" CONTAINER="life_agile" SITE_URL=""
 [[ -f deploy.local/ship.env ]] && source deploy.local/ship.env
-OVERRIDE="deploy.local/docker-compose.override.yml"
 TRAILER="Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
-DEPLOY_PATHS=(server shared web Dockerfile .dockerignore docker-compose.yml package.json package-lock.json openwiki .env.example)
 
-msg="" body="" do_test=1 do_commit=1 do_deploy=1
+msg="" body="" do_test=1 do_commit=1 do_deploy=1 direct=0
 files=()
 while (($#)); do
   case "$1" in
@@ -33,7 +29,8 @@ while (($#)); do
     --no-test) do_test=0; shift ;;
     --no-deploy) do_deploy=0; shift ;;
     --deploy-only) do_commit=0; do_test=0; shift ;;
-    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+    --direct) direct=1; shift ;;
+    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
     --) shift; files+=("$@"); break ;;
     *) files+=("$1"); shift ;;
   esac
@@ -76,56 +73,36 @@ if ((do_commit)); then
 fi
 
 ((do_deploy)) || { log "deploy skipped"; exit 0; }
-[[ -n "$HOST" && -n "$REMOTE_DIR" && -n "$SITE_URL" ]] || fail "deploy target missing: create deploy.local/ship.env (HOST, REMOTE_DIR, SITE_URL)"
+[[ -n "$SITE_URL" ]] || fail "SITE_URL missing: create deploy.local/ship.env"
+[[ "$(git branch --show-current)" == main ]] || fail "not on main"
 
-# 3. Sync code (tar pipeline keeps the server data/ directory and .env).
-tar --exclude='./data' --exclude='.env' --exclude='node_modules' \
-  --exclude='web/dist' --exclude='web/.astro' -cf - "${DEPLOY_PATHS[@]}" \
-  | ssh "$HOST" "mkdir -p $REMOTE_DIR/data && tar -xf - -C $REMOTE_DIR" || fail "file sync failed"
-if [[ -f "$OVERRIDE" ]]; then
-  ssh "$HOST" "cat > $REMOTE_DIR/docker-compose.override.yml" <"$OVERRIDE" || fail "override sync failed"
+# 3. Push (gh provides the HTTPS credentials).
+sha=$(git rev-parse HEAD)
+git -c credential.helper= -c credential.helper='!gh auth git-credential' push -q origin main 2>&1 | grep -v '^$' >&2 || true
+[[ "$(git rev-parse origin/main)" == "$sha" ]] || fail "push failed"
+log "push: ok ${sha:0:7}"
+
+# 4. Deploy: CI (default) or the emergency path over the maintainer SSH key.
+if ((direct)); then
+  [[ -n "$HOST" && -n "$REMOTE_DIR" ]] || fail "HOST/REMOTE_DIR missing in deploy.local/ship.env"
+  ssh "$HOST" "$REMOTE_DIR/scripts/deploy-server.sh $sha" | tail -3 || fail "direct deploy failed"
+else
+  run=""
+  for _ in $(seq 1 30); do
+    run=$(gh run list -c "$sha" -w CI -L 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)
+    [[ -n "$run" ]] && break
+    sleep 2
+  done
+  [[ -n "$run" ]] || fail "no CI run found for ${sha:0:7}"
+  if ! gh run watch "$run" --exit-status >/dev/null 2>&1; then
+    gh run view "$run" --log-failed 2>/dev/null | tail -25 >&2
+    fail "CI run $run failed (tests or deploy); the server rolls back on a failed deploy"
+  fi
+  log "ci: ok (run $run)"
 fi
-ssh "$HOST" "test -f $REMOTE_DIR/.env" || fail "server .env is missing ($REMOTE_DIR/.env), see openwiki/deploy.md"
-log "sync: ok"
 
-# 3b. Pre-deploy backup of the live DB (consistent copy through VACUUM INTO). Keep the newest 10.
-#     A new image may run a migration on start, so a failed backup stops the deploy.
-backup=$(ssh "$HOST" bash -s <<REMOTE 2>&1
-set -e
-if ! docker inspect $CONTAINER >/dev/null 2>&1; then echo "skip: no container"; exit 0; fi
-ts=\$(date -u +%Y%m%dT%H%M%SZ)
-docker exec $CONTAINER node -e "
-  const { DatabaseSync } = require('node:sqlite');
-  require('node:fs').mkdirSync('data/backups', { recursive: true });
-  const db = new DatabaseSync('data/agile.db');
-  db.exec(\"VACUUM INTO 'data/backups/pre-deploy-\$ts.db'\");
-  const fs = require('node:fs');
-  const old = fs.readdirSync('data/backups').filter((f) => /^pre-deploy-.*\\.db\$/.test(f)).sort().slice(0, -10);
-  for (const f of old) fs.rmSync('data/backups/' + f);
-  console.log('ok pre-deploy-\$ts.db');
-"
-REMOTE
-) || { printf '%s\n' "$backup" >&2; fail "pre-deploy backup failed, nothing deployed"; }
-log "backup: $(tail -1 <<<"$backup")"
-
-# 4. Rebuild and restart (output only on failure).
-out=$(mktemp)
-if ! ssh "$HOST" "cd $REMOTE_DIR && docker compose up -d --build" >"$out" 2>&1; then
-  tail -20 "$out" >&2; rm -f "$out"; fail "docker compose failed"
-fi
-rm -f "$out"
-log "build: ok"
-
-# 5. Verify: container runs, no crash in fresh logs, site answers.
-sleep 8
-state=$(ssh "$HOST" "docker inspect -f '{{.State.Status}} restarts={{.RestartCount}}' $CONTAINER" 2>/dev/null || echo "missing")
-logs=$(ssh "$HOST" "docker logs --since 30s $CONTAINER 2>&1 | tail -40")
+# 5. Verify the site.
 code=$(curl -s -o /dev/null -m 15 -w '%{http_code}' "$SITE_URL" || echo "000")
-log "container: $state | site: $code"
-if [[ "$state" != running* ]] || grep -qE 'Uncaught|SyntaxError|TypeError|unhandled error' <<<"$logs"; then
-  printf '%s\n' "$logs" | tail -25 >&2
-  fail "container is not healthy"
-fi
 [[ "$code" == 200 ]] || fail "site returned HTTP $code"
-log "last log: $(tail -1 <<<"$logs" | cut -c1-160)"
+log "site: $code"
 log "done"

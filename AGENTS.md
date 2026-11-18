@@ -13,8 +13,8 @@ Self-hosted agile board for a couple or a small group (Turkish UI). Public repo:
 
 ## 3. Git and deploy
 - Commit after each meaningful change. Commit only the files you changed.
-- Use `scripts/ship.sh -m "feat: ..." file1 file2` (tests + web build + commit + deploy + verify). Run it directly; do not delegate it.
-- `--no-deploy` commits only. The deploy target lives in `deploy.local/` (not in git; maintainer only).
+- Use `scripts/ship.sh -m "feat: ..." file1 file2` (tests + web build + commit + push + wait for the CI deploy + verify). Run it directly; do not delegate it.
+- `--no-deploy` commits only. A push to `main` deploys automatically (`.github/workflows/ci.yml` → `scripts/deploy-server.sh`). Maintainer settings live in `deploy.local/` (not in git).
 - Never commit personal data: no real names, emails, hosts, IPs or domains. Use `deploy.local/` or `.env` for them.
 
 ## 4. Data safety
