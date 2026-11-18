@@ -18,3 +18,4 @@ web/.astro/
 
 # Maintainer-only deploy settings (server, domain, notes)
 deploy.local/
+docker-compose.override.yml
