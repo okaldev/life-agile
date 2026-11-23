@@ -17,9 +17,9 @@ Code: `server/src/domain/blocks.ts`, `server/src/domain/events.ts`, `server/src/
 - Photo badges (uploaded photo, else Google photo, else initial) sit in the top-right corner when the item is at least 64 px wide (CSS container query). Narrow items show only the strip, so the title stays readable.
 - Events show the same badges; there is no second attendee row.
 
-## Long events
+## Long events and long task parts
 
-Timed events of 8 hours or more (for example "İstanbul'dayım 00:15–23:59") are drawn as a hatched background band over the whole day column, not as a column item. Tasks keep the full width. A small label (title, kind icon, photos) sticks just below the day header and opens the event; the rest of the band lets clicks and drags reach the grid.
+Timed events and task parts of 8 hours or more (for example "İstanbul'dayım 00:15–23:59" or a 09:00–18:00 work day such as a recurring "mesai") are drawn as a background band over their hours in the day column, not as a column item. Other items keep the full width. Events: hatched band. Task parts: a soft band in the category color with an owner-color edge (`LongTaskBand`). A small label (title, icon or done check, photos; times in the tooltip) sticks just below the day header and opens the item (a task opens with its part line for done / missed); the rest of the band lets clicks and drags reach the grid. When several bands share a day, their labels sit side by side so they never overlap. Long items cannot be dragged or resized on the grid; edit them in their dialog.
 
 ## Multi-day items and holidays
 

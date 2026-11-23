@@ -43,10 +43,12 @@ type Panel =
   | { type: "event"; draft: EventDraft }
   | { type: "unmarked" };
 
-/** Events of 8 hours or more are drawn as a day background instead of a column item. */
+/**
+ * Events and task parts of 8 hours or more (e.g. a work day) are drawn as a day background instead of
+ * a column item, so shorter items keep the full column width.
+ */
 const BACKGROUND_MINUTES = 8 * 60;
-const isBackground = (i: Item) =>
-  i.kind === "event" && !!i.startTime && !!i.endTime && itemEnd(i) - itemStart(i) >= BACKGROUND_MINUTES;
+const isBackground = (i: Item) => !!i.startTime && !!i.endTime && itemEnd(i) - itemStart(i) >= BACKGROUND_MINUTES;
 
 const snap = (m: number) => Math.round(m / SNAP) * SNAP;
 const clampMin = (m: number) => Math.max(START_H * 60, Math.min(END_H * 60, m));
@@ -208,6 +210,68 @@ function ItemBox({
         </span>
       )}
       {onResizeDown && <div onPointerDown={onResizeDown} className="absolute inset-x-0 bottom-0 h-1.5 cursor-ns-resize" aria-hidden />}
+    </div>
+  );
+}
+
+/** A task part of 8 hours or more (e.g. a work day): a soft band behind the column with a small label. */
+function LongTaskBand({
+  item,
+  idx,
+  colWidth,
+  headerH,
+  slot,
+  unmarked,
+  onClick,
+}: {
+  item: Item;
+  idx: number;
+  colWidth: string;
+  headerH: number;
+  /** Horizontal place of the label when several bands share the day. */
+  slot: React.CSSProperties;
+  unmarked: boolean;
+  onClick: () => void;
+}) {
+  const { state } = useStore();
+  if (item.kind !== "block") return null;
+  const t = item.task;
+  const category = state.categories.find((c) => c.id === t.categoryId);
+  const color = category?.color ?? "#64748b";
+  const owner = t.assigneeIds.length > 1 ? null : state.users.find((u) => u.id === t.assigneeIds[0]);
+  return (
+    <div
+      className="pointer-events-none absolute border-r-2"
+      style={{
+        top: ((itemStart(item) - START_H * 60) / 60) * HOUR_PX,
+        height: ((itemEnd(item) - itemStart(item)) / 60) * HOUR_PX,
+        left: `calc(${colWidth} * ${idx})`,
+        width: colWidth,
+        backgroundColor: `color-mix(in oklab, ${color} 9%, transparent)`,
+        borderRightColor: owner?.color ?? "var(--muted-foreground)",
+        opacity: item.status === "missed" ? 0.45 : 1,
+      }}
+    >
+      <button
+        type="button"
+        onClick={onClick}
+        style={{ top: headerH + 2, ...slot }}
+        title={`${t.title} · ${item.startTime}–${item.endTime}`}
+        className={cn(
+          "pointer-events-auto sticky my-0.5 flex items-center gap-1 rounded bg-background/90 px-1 py-0.5 text-[10px] font-medium shadow-xs",
+          item.status === "done" && "opacity-60",
+          item.status === "missed" && "text-red-600 line-through dark:text-red-400",
+          unmarked && "outline-1 outline-amber-500 outline-dashed",
+        )}
+      >
+        {item.status === "done" ? <Check className="size-3 shrink-0 text-emerald-600" /> : <CategoryDot category={category} className="size-1.5" />}
+        <span className="truncate">{t.title}</span>
+        <span className="flex shrink-0 -space-x-1">
+          {t.assigneeIds.map((id) => (
+            <UserAvatar key={id} user={state.users.find((u) => u.id === id)} className="size-3.5 text-[7px] ring-1 ring-background" />
+          ))}
+        </span>
+      </button>
     </div>
   );
 }
@@ -662,10 +726,15 @@ export default function CalendarPage() {
                 {shownDays.map((i, idx) =>
                   dates[i] === state.today ? <NowLine key="now" min={nowMin} left={`calc(${colWidth} * ${idx})`} width={colWidth} /> : null,
                 )}
-                {/* Long events (8 h or more) are a background band, so tasks keep the full column width. */}
+                {/* Long items (8 h or more) are a background band, so other items keep the full column width. */}
                 {shownDays.map((i, idx) =>
-                  backgrounds(dates[i]).map((it) => {
-                    if (it.kind !== "event") return null;
+                  backgrounds(dates[i]).map((it, k, all) => {
+                    // Several bands on one day: their labels sit side by side, so sticky labels never overlap.
+                    const slot = { marginLeft: `calc(${(k / all.length) * 100}% + 2px)`, maxWidth: `calc(${100 / all.length}% - 4px)` };
+                    if (it.kind === "block")
+                      return (
+                        <LongTaskBand key={it.key} item={it} idx={idx} colWidth={colWidth} headerH={headerH} slot={slot} unmarked={unmarkedKeys.has(it.key)} onClick={() => openItem(it)} />
+                      );
                     const meta = kindMeta(it.event.kind);
                     const Icon = meta.icon;
                     return (
@@ -684,10 +753,10 @@ export default function CalendarPage() {
                         <button
                           type="button"
                           onClick={() => openItem(it)}
-                          style={{ top: headerH + 2 }}
+                          style={{ top: headerH + 2, ...slot }}
                           title={`${it.event.title} · ${it.startTime}–${it.endTime}`}
                           className={cn(
-                            "pointer-events-auto sticky m-0.5 flex max-w-[calc(100%-4px)] items-center gap-1 rounded bg-background/90 px-1 py-0.5 text-[10px] font-medium shadow-xs",
+                            "pointer-events-auto sticky my-0.5 flex items-center gap-1 rounded bg-background/90 px-1 py-0.5 text-[10px] font-medium shadow-xs",
                             unmarkedKeys.has(it.key) && "outline-1 outline-amber-500 outline-dashed",
                           )}
                         >
