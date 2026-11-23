@@ -154,6 +154,8 @@ export interface Sprint {
   goal: string;
   planningStep: PlanningStep | null;
   groomedAt: string | null;
+  /** Set when the planned sprint waits to start by itself at 00:00 of startDate. */
+  scheduledAt: string | null;
   closedAt: string | null;
   members: SprintMember[];
 }

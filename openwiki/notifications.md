@@ -13,6 +13,8 @@ Code: `server/src/jobs/`, `web/public/sw.js`.
 
 A ticker runs every 60 s in the app time zone (`APP_TIMEZONE`) (`server/src/jobs/scheduler.ts`). A scheduled job fires only in the 30 minutes after its time, so a restart at noon does not send the morning summary. `sent_notifications` stops double sends (rows older than 14 days are deleted).
 
+The same ticker starts a scheduled sprint at 00:00 of its start date (no time window: a restart later that day still starts it) and sends "Sprint N başladı" to each user once (key `sprint-start:<sprintId>:<userId>`). See [sprint-flow.md](sprint-flow.md).
+
 | Job | When | Condition |
 |---|---|---|
 | Planning reminder | Sunday 20:00 | `planning_reminder` on, no planning session open |

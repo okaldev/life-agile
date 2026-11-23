@@ -10,7 +10,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { api } from "@/lib/api";
 import { addDays, fmt, longDate, minutesToTime, timeToMinutes, weekDates, weekdayIndex, weekStart } from "@/lib/dates";
-import { matchesView, useStore, type ViewFilter } from "@/lib/store";
+import { isActiveWork, matchesView, useStore, type ViewFilter } from "@/lib/store";
 import { WEEKDAY_SHORT } from "@/lib/strings";
 import { cn } from "@/lib/utils";
 import { CategoryDot, SpBadge, UserAvatar, ViewTabs } from "../common";
@@ -321,7 +321,13 @@ export default function CalendarPage() {
   };
   const weekSprint = sprintFor(dates[0]);
   const sideTasks = Object.values(state.tasks)
-    .filter((t) => t.sprintId !== null && t.sprintId === weekSprint && t.status !== "done" && !t.recurringRuleId && matchesView(t, state.view))
+    .filter(
+      (t) =>
+        (weekSprint === state.activeSprint?.id ? isActiveWork(t, state) : t.sprintId !== null && t.sprintId === weekSprint) &&
+        t.status !== "done" &&
+        !t.recurringRuleId &&
+        matchesView(t, state.view),
+    )
     .sort(compareTasks);
 
   /** Pointer position to (day index, minutes). */

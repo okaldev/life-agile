@@ -27,7 +27,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
-import { relativeTime, shortDate } from "@/lib/dates";
+import { fmt, relativeTime, shortDate } from "@/lib/dates";
 import { PAGE_LABEL, STEP_LABEL } from "@/lib/strings";
 import { usePartner, useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -137,7 +137,17 @@ function ActivityFeed() {
 function PlanningBanner({ page }: { page: string }) {
   const { state } = useStore();
   const p = state.plannedSprint;
-  if (!p?.planningStep || page === "planning") return null;
+  if (page === "planning" || !p) return null;
+  if (!p.planningStep && p.scheduledAt)
+    return (
+      <a href="/planlama" className="flex items-center justify-between gap-2 border-b bg-muted px-4 py-2 text-sm">
+        <span>
+          Sprint {p.number} planlandı · <b>{fmt(p.startDate, "d MMM EEE")} 00:00</b>'da başlar
+        </span>
+        <span className="font-medium underline underline-offset-2">Planı gör →</span>
+      </a>
+    );
+  if (!p.planningStep) return null;
   return (
     <a
       href="/planlama"

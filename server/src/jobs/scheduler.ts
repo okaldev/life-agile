@@ -1,9 +1,11 @@
-// One-minute ticker: reminders and daily backup. See openwiki/notifications.md.
+// One-minute ticker: scheduled sprint start, reminders and daily backup. See openwiki/notifications.md.
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { DB } from "../db/db.ts";
 import { getPrefs, getSprintByStatus, listUsers } from "../db/repo.ts";
+import { dueScheduledSprint, finishPlanning } from "../domain/sprint.ts";
 import { localNow, type LocalNow } from "../domain/time.ts";
+import { broadcast } from "../realtime/hub.ts";
 import { sendToUser, type PushPayload } from "./push.ts";
 
 const WINDOW_MIN = 30; // a scheduled job fires only within this many minutes after its time
@@ -50,6 +52,25 @@ export async function tick(db: DB, dbPath: string, now: LocalNow = localNow()): 
     } catch (err) {
       console.error("[jobs] backup failed", err);
     }
+  }
+
+  // A scheduled sprint starts by itself at 00:00 of its start date (openwiki/sprint-flow.md).
+  if (dueScheduledSprint(db, now.date)) {
+    const started = finishPlanning(db);
+    console.log(`[jobs] sprint ${started.number} started on schedule`);
+    db.prepare("INSERT INTO activity (user_id, action, entity, entity_id, summary) VALUES (NULL, 'planning', 'sprint', ?, ?)").run(
+      started.id,
+      `Sprint ${started.number} zamanında başladı`,
+    );
+    broadcast("sprint.changed", { activeSprint: getSprintByStatus(db, "active"), plannedSprint: null }, null, null);
+    broadcast("planning.changed", { refresh: true }, null, null);
+    for (const u of users)
+      await notify(db, `sprint-start:${started.id}:${u.id}`, u.id, {
+        title: `Sprint ${started.number} başladı`,
+        body: started.goal || "Yeni hafta, yeni sprint.",
+        url: "/board",
+        tag: "sprint-start",
+      });
   }
 
   const planned = getSprintByStatus(db, "planned");

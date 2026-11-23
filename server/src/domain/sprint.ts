@@ -10,9 +10,13 @@ export const STEPS: PlanningStep[] = ["retro", "grooming", "estimation", "start"
 
 export class PlanningError extends Error {}
 
-/** Starts a planning session, or returns the open one. */
+/** Starts a planning session, or returns the open one. A scheduled plan opens again for editing (start step). */
 export function startPlanning(db: DB, todayDate = today()): Sprint {
   const open = getSprintByStatus(db, "planned");
+  if (open && !open.planningStep) {
+    db.prepare("UPDATE sprints SET planning_step = 'start', scheduled_at = NULL WHERE id = ?").run(open.id);
+    return getSprint(db, open.id)!;
+  }
   if (open) return open;
   const active = getSprintByStatus(db, "active");
   return tx(db, () => {
@@ -106,6 +110,27 @@ export function doneSpByUser(db: DB, sprintId: number): Map<number, number> {
   return new Map(rows.map((r) => [r.user_id, r.sp ?? 0]));
 }
 
+/**
+ * Ends the wizard without starting: the planned sprint starts by itself at 00:00 of its start date
+ * (scheduler, openwiki/sprint-flow.md). Until then the active sprint keeps running.
+ */
+export function schedulePlanning(db: DB, todayDate = today()): Sprint {
+  const planned = getSprintByStatus(db, "planned");
+  if (!planned) throw new PlanningError("no planning session");
+  if (planned.startDate <= todayDate) throw new PlanningError("the sprint week has started: start it now");
+  tx(db, () => {
+    enterGrooming(db, planned.id);
+    db.prepare("UPDATE sprints SET planning_step = NULL, scheduled_at = ? WHERE id = ?").run(nowIso(), planned.id);
+  });
+  return getSprint(db, planned.id)!;
+}
+
+/** The scheduled sprint whose start date has come, or null. */
+export function dueScheduledSprint(db: DB, todayDate = today()): Sprint | null {
+  const planned = getSprintByStatus(db, "planned");
+  return planned && planned.scheduledAt && !planned.planningStep && planned.startDate <= todayDate ? planned : null;
+}
+
 /** Closes the active sprint and activates the planned one. */
 export function finishPlanning(db: DB): Sprint {
   const planned = getSprintByStatus(db, "planned");
@@ -114,6 +139,17 @@ export function finishPlanning(db: DB): Sprint {
   tx(db, () => {
     enterGrooming(db, planned.id);
     if (active) {
+      // Carried tasks finished before the start belong to the old sprint (planned early, done in the old week).
+      db.prepare(
+        `UPDATE tasks SET sprint_id = ?, carried_from_sprint_id = NULL, updated_at = ?
+         WHERE sprint_id = ? AND carried_from_sprint_id = ? AND status = 'done' AND recurring_rule_id IS NULL`,
+      ).run(active.id, nowIso(), planned.id, active.id);
+      // A scheduled plan: open tasks added to the old sprint after grooming carry over too.
+      if (planned.scheduledAt)
+        db.prepare(
+          `UPDATE tasks SET sprint_id = ?, carried_from_sprint_id = ?, unplanned_at = NULL, updated_at = ?
+           WHERE sprint_id = ? AND status != 'done' AND recurring_rule_id IS NULL`,
+        ).run(planned.id, active.id, nowIso(), active.id);
       const done = doneSpByUser(db, active.id);
       for (const m of active.members)
         db.prepare("UPDATE sprint_members SET done_sp_snapshot = ? WHERE sprint_id = ? AND user_id = ?").run(
@@ -140,7 +176,7 @@ export function finishPlanning(db: DB): Sprint {
       ).run(nowIso(), active.id);
       db.prepare("UPDATE sprints SET status = 'closed', closed_at = ? WHERE id = ?").run(nowIso(), active.id);
     }
-    db.prepare("UPDATE sprints SET status = 'active', planning_step = NULL WHERE id = ?").run(planned.id);
+    db.prepare("UPDATE sprints SET status = 'active', planning_step = NULL, scheduled_at = NULL WHERE id = ?").run(planned.id);
   });
   return getSprint(db, planned.id)!;
 }

@@ -140,6 +140,7 @@ export function mapSprint(db: DB, r: Row): Sprint {
     goal: r.goal,
     planningStep: r.planning_step ?? null,
     groomedAt: r.groomed_at ?? null,
+    scheduledAt: r.scheduled_at ?? null,
     closedAt: r.closed_at ?? null,
     members: membersOf(db, r.id),
   };

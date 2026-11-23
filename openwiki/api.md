@@ -73,9 +73,10 @@ All `/api/*` routes need a session cookie, except `/api/health`. Write calls (`P
 | GET | `/api/sprints/:id/tasks` | Tasks of any sprint (also closed) |
 | PATCH | `/api/sprints/:id` | `{goal}` |
 | PUT | `/api/sprints/:id/members/:userId` | `{targetSp}` |
-| POST | `/api/planning/start` | Creates the planned sprint, step `retro` (or `grooming` for the first sprint) |
+| POST | `/api/planning/start` | Creates the planned sprint, step `retro` (or `grooming` for the first sprint). On a scheduled plan: opens it again at step `start` |
 | POST | `/api/planning/step` | `{step}`; entering `grooming` the first time carries tasks and generates occurrences |
 | POST | `/api/planning/recurring-sp` | `{ruleId, sp}` |
+| POST | `/api/planning/schedule` | Closes the wizard; the planned sprint starts by itself at 00:00 of its start date. 409 when the week has begun |
 | POST | `/api/planning/cancel` | Deletes the planned sprint, restores tasks |
 | POST | `/api/planning/finish` | Closes the active sprint, activates the planned one |
 | GET | `/api/retro/:sprintId` | Items |

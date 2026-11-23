@@ -261,6 +261,21 @@ export function useStore(): StoreApi {
 }
 
 /** Tasks that match the person filter. */
+/**
+ * Work of the running week: tasks of the active sprint, plus tasks already carried into a scheduled
+ * (planned early) sprint. They stay on the board and calendar until the new sprint starts.
+ */
+export function isActiveWork(task: Task, s: Pick<State, "activeSprint" | "plannedSprint">): boolean {
+  if (!s.activeSprint) return false;
+  if (task.sprintId === s.activeSprint.id) return true;
+  return (
+    !!s.plannedSprint?.scheduledAt &&
+    task.sprintId === s.plannedSprint.id &&
+    task.carriedFromSprintId === s.activeSprint.id &&
+    !task.recurringRuleId
+  );
+}
+
 export function matchesView(task: Task, view: ViewFilter): boolean {
   if (view === "all") return true;
   if (view === "shared") return task.assigneeIds.length > 1;

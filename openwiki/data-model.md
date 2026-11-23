@@ -21,6 +21,7 @@ Dates are `YYYY-MM-DD` strings in the app time zone (`APP_TIMEZONE`, default Eur
 ### sprints
 `id`, `number`, `start_date` (Monday), `end_date` (Sunday), `status` (`planned` | `active` | `closed`), `goal`, `planning_step` (`retro` | `grooming` | `estimation` | `start` | NULL), `closed_at`, `created_at`.
 - Max one `active` and max one `planned` sprint.
+- `scheduled_at` (v7): set when a planned sprint waits to start by itself at 00:00 of `start_date` (`planning_step` is then NULL).
 
 ### sprint_members
 `sprint_id`, `user_id`, `target_sp`, `done_sp_snapshot` (set on close). Primary key (`sprint_id`, `user_id`).

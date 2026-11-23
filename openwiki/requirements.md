@@ -14,7 +14,7 @@
 ## Sprints
 
 - A sprint is one week: Monday 00:00 to Sunday 23:59 in the app time zone (`APP_TIMEZONE`, default `Europe/Istanbul`).
-- A sprint never opens or closes automatically. A user starts the planning wizard from the UI, normally on Sunday evening.
+- A user starts the planning wizard from the UI (normally Sunday evening, or earlier in the week). At the end the user starts the sprint now, or schedules it: it then starts by itself at 00:00 of its first day. Nothing else opens or closes a sprint automatically.
 - Each sprint has a goal sentence and an SP target per person. Users can change targets at any time. Total target = sum of the person targets.
 - Planning wizard order: **Retro → Grooming → Estimation → Start**. See [sprint-flow.md](sprint-flow.md).
 - Unfinished tasks move to the next sprint by default. In grooming a user can send them back to the backlog.

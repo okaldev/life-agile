@@ -16,10 +16,11 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api";
-import { matchesView, useStore } from "@/lib/store";
+import { isActiveWork, matchesView, useStore } from "@/lib/store";
 import { STATUS_LABEL } from "@/lib/strings";
 import { cn } from "@/lib/utils";
 import { EmptyState, ViewTabs, sumSp, fmtSp } from "../common";
+import { shortDate } from "@/lib/dates";
 import { CompactSprintHeader } from "../SprintHeader";
 import { TaskCard, compareTasks } from "../TaskCard";
 import { useTaskDialog } from "../TaskDialog";
@@ -80,13 +81,21 @@ function NoSprint() {
     window.location.href = "/planlama";
   };
   return (
-    <EmptyState title={state.plannedSprint ? "Planlama devam ediyor." : "Henüz aktif sprint yok."}>
+    <EmptyState
+      title={
+        state.plannedSprint?.scheduledAt
+          ? `Sprint ${state.plannedSprint.number} ${shortDate(state.plannedSprint.startDate)} 00:00'da başlayacak.`
+          : state.plannedSprint
+            ? "Planlama devam ediyor."
+            : "Henüz aktif sprint yok."
+      }
+    >
       <p className="max-w-sm text-sm text-muted-foreground">
         Sprint planlamasında backlogdan görev seçip puanlarsınız. Sonra sprint başlar.
       </p>
       {state.plannedSprint ? (
         <Button asChild>
-          <a href="/planlama">Planlamaya devam et</a>
+          <a href="/planlama">{state.plannedSprint.scheduledAt ? "Planı gör" : "Planlamaya devam et"}</a>
         </Button>
       ) : (
         <Button onClick={start}>İlk sprinti planla</Button>
@@ -108,8 +117,8 @@ export default function BoardPage() {
   );
 
   const sprintTasks = useMemo(
-    () => (sprint ? Object.values(state.tasks).filter((t) => t.sprintId === sprint.id) : []),
-    [state.tasks, sprint],
+    () => (sprint ? Object.values(state.tasks).filter((t) => isActiveWork(t, state)) : []),
+    [state.tasks, sprint, state.plannedSprint],
   );
   const visible = useMemo(
     () =>

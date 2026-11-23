@@ -9,6 +9,7 @@ import {
   cancelPlanning,
   finishPlanning,
   PlanningError,
+  schedulePlanning,
   setRecurringSp,
   setStep,
   sprintStats,
@@ -105,6 +106,14 @@ export function planningRoutes(db: DB): Hono<AppEnv> {
     emit(c, "planning.changed", { refresh: true });
     logActivity(db, c, "planning", "sprint", null, "Planlamayı iptal etti");
     return c.json({ ok: true });
+  });
+
+  app.post("/planning/schedule", (c) => {
+    const sprint = wrap(() => schedulePlanning(db));
+    broadcastAll(c);
+    emit(c, "planning.changed", { refresh: true });
+    logActivity(db, c, "planning", "sprint", sprint.id, `Sprint ${sprint.number} planlandı, ${sprint.startDate} 00:00'da başlayacak`);
+    return c.json(sprint);
   });
 
   app.post("/planning/finish", (c) => {

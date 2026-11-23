@@ -195,3 +195,46 @@ test("time zone from config: local to UTC is DST-safe", async () => {
   }
   assert.equal(localToUtc("2026-11-16", "09:00").toISOString(), "2026-11-16T06:00:00.000Z");
 });
+
+test("early planning: scheduled start keeps the old sprint running, then starts by itself", async () => {
+  const { schedulePlanning, dueScheduledSprint } = await import("../src/domain/sprint.ts");
+  const { tick } = await import("../src/jobs/scheduler.ts");
+  const { db, alice } = setup();
+  const s1 = startPlanning(db, "2026-11-12"); // Thursday: sprint 1 = 9-15 Nov
+  finishPlanning(db);
+  const open = addTask(db, "open", s1.id, [alice], 2);
+  const willFinish = addTask(db, "finished before start", s1.id, [alice], 3);
+
+  // The plan for 16-22 Nov is made early, on Thursday 12 Nov.
+  const s2 = startPlanning(db, "2026-11-12");
+  assert.equal(s2.startDate, "2026-11-16");
+  setStep(db, "grooming");
+  assert.equal(getTask(db, open)!.sprintId, s2.id); // carried in grooming
+  assert.throws(() => schedulePlanning(db, "2026-11-16")); // week already started: start now instead
+  const scheduled = schedulePlanning(db, "2026-11-12");
+  assert.ok(scheduled.scheduledAt);
+  assert.equal(scheduled.planningStep, null);
+  assert.equal(getSprintByStatus(db, "active")!.id, s1.id); // old sprint keeps running
+
+  // Work goes on in the old week: one carried task is done, a new one is added.
+  assert.equal(getTask(db, willFinish)!.carriedFromSprintId, s1.id);
+  db.prepare("UPDATE tasks SET status = 'done' WHERE id = ?").run(willFinish);
+  const late = addTask(db, "added after planning", s1.id, [alice], 1);
+
+  // Reopen and schedule again: the plan stays.
+  assert.equal(startPlanning(db, "2026-11-13").planningStep, "start");
+  assert.equal(getSprintByStatus(db, "planned")!.scheduledAt, null);
+  schedulePlanning(db, "2026-11-13");
+
+  assert.equal(dueScheduledSprint(db, "2026-11-15"), null);
+  await tick(db, ":memory:", { date: "2026-11-15", time: "23:59", weekday: 6 });
+  assert.equal(getSprintByStatus(db, "active")!.id, s1.id);
+  await tick(db, ":memory:", { date: "2026-11-16", time: "00:00", weekday: 0 });
+  assert.equal(getSprintByStatus(db, "active")!.id, s2.id);
+  assert.equal(getSprintByStatus(db, "planned"), null);
+  assert.equal(getTask(db, willFinish)!.sprintId, s1.id); // done before the start: counts for sprint 1
+  assert.equal(getTask(db, open)!.sprintId, s2.id);
+  assert.equal(getTask(db, late)!.sprintId, s2.id); // open work carries over on a scheduled start
+  const closed = db.prepare("SELECT status, done_sp_snapshot AS done FROM sprints s JOIN sprint_members m ON m.sprint_id = s.id WHERE s.id = ? AND m.user_id = ?").get(s1.id, alice) as any;
+  assert.deepEqual([closed.status, closed.done], ["closed", 3]);
+});

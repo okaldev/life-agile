@@ -261,4 +261,8 @@ export const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
   );
   `,
+  // 7: a planned sprint can start by itself at 00:00 of its start date (scheduled_at = when it was scheduled).
+  `
+  ALTER TABLE sprints ADD COLUMN scheduled_at TEXT;
+  `,
 ];

@@ -6,6 +6,7 @@ Code: `server/src/domain/sprint.ts`, `server/src/routes/planning.ts`, `web/src/c
 
 ```
 (no sprint) --start first planning--> planned --start--> active --start planning--> (active + planned) --start--> closed + active
+                                                                        \--schedule--> (active + scheduled) --00:00 of start date--> closed + active
 ```
 
 - First use: there is no sprint. The board shows "İlk sprinti planla". The wizard runs without the retro step.
@@ -40,10 +41,19 @@ Both users see the same step. `planning_step` is stored on the planned sprint an
 
 ### 4. Start (`start`)
 - Summary: task count, SP per person, targets, goal.
-- "Sprinti başlat":
+- When the sprint week has not begun yet (`startDate > today`), two options: **Zamanında başlat** (schedule) and **Şimdi başlat** (start now). Otherwise only "Sprinti başlat".
+- "Şimdi başlat" / "Sprinti başlat":
   1. Active sprint: snapshot `done_sp_snapshot` per member, `status=closed`, `closed_at=now`. Recurring occurrences that are not done get `missed_at` and their planned parts become `missed`.
   2. Planned sprint: `status=active`, `planning_step=NULL`.
   3. Broadcast `sprint.changed`. Both clients go to the board.
+
+### Scheduled start (planning early)
+
+- "Zamanında başlat" (`POST /api/planning/schedule`): the planned sprint gets `scheduled_at`, `planning_step=NULL`; the wizard closes. Refused when the week has begun.
+- Until the start, the active sprint keeps running. Tasks carried in grooming are already in the planned sprint, but the board and the calendar side panel still show them as work of the running week (`isActiveWork`, `web/src/lib/store.tsx`).
+- The scheduler (`server/src/jobs/scheduler.ts`, every minute) runs `finishPlanning` when `today >= startDate` (00:00 local time), broadcasts `sprint.changed` and `planning.changed`, writes an activity row without a user, and sends a "Sprint N başladı" push once per user.
+- At this start, `finishPlanning` also: moves carried tasks that became `done` before the start back to the old sprint (they count there), and carries open non-recurring tasks added to the old sprint after grooming (no backlog return).
+- Planlama page shows the scheduled plan: **Şimdi başlat**, **Planı düzenle** (`POST /api/planning/start` opens the wizard at the start step and clears `scheduled_at`), **Planı iptal et** (same as cancel). A banner on other pages shows the start time.
 
 ## Mid-sprint
 
