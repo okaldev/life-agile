@@ -240,8 +240,8 @@ function ItemBox({
   );
 }
 
-/** Height of a band label in minutes of the grid. */
-const LABEL_MIN = (20 / HOUR_PX) * 60;
+/** Height of a band label (title and hours) in minutes of the grid. */
+const LABEL_MIN = (30 / HOUR_PX) * 60;
 
 /** First minute inside the band where its label does not cover an item drawn over it (else the band start). */
 function freeLabelMinute(band: Item, over: Item[]): number {
@@ -290,27 +290,38 @@ function LongBand({
   return (
     <>
       <div className={cn("pointer-events-none absolute", !isEvent && "border-l-2")} style={{ top, height, ...lane, ...bandStyle }} />
+      {/* Title like a task item: name, then the hours; photos on the right. */}
       <div className="pointer-events-none absolute" style={{ top: top + ((labelAt - itemStart(item)) / 60) * HOUR_PX, ...lane }}>
         <button
           type="button"
           onClick={onClick}
           title={`${title} · ${item.startTime}–${item.endTime}`}
           className={cn(
-            "pointer-events-auto m-0.5 flex max-w-[calc(100%-4px)] items-center gap-1 rounded bg-background/90 px-1 py-0.5 text-[10px] font-medium shadow-xs",
-            item.status === "done" && "text-muted-foreground",
-            item.status === "missed" && "text-red-600 line-through dark:text-red-400",
-            unmarked && "outline-1 outline-amber-500 outline-dashed",
+            "pointer-events-auto relative block w-full py-0.5 pr-1.5 pl-2 text-left text-[11px] leading-tight",
+            ids.length > 1 ? "@[64px]:pr-9" : "@[64px]:pr-5",
+            "@container",
+            unmarked && "outline-2 outline-offset-[-2px] outline-amber-500 outline-dashed",
           )}
         >
-          {/* Photo first: in a narrow lane the person stays visible when the title is cut. */}
-          <span className="flex shrink-0 -space-x-1">
+          <p
+            className={cn(
+              "flex items-center gap-1 truncate font-medium",
+              item.status === "done" && "text-muted-foreground",
+              item.status === "missed" && "text-red-600 line-through dark:text-red-400",
+            )}
+          >
+            {item.status === "done" && <Check className="size-3 shrink-0 text-emerald-600" />}
+            {Icon && <Icon className="size-3 shrink-0" style={{ color: meta!.color }} />}
+            <span className="truncate">{title}</span>
+          </p>
+          <p className="truncate text-muted-foreground">
+            {item.startTime}–{item.endTime}
+          </p>
+          <span className="absolute top-0.5 right-1 hidden -space-x-1 @[64px]:flex">
             {ids.map((id) => (
               <UserAvatar key={id} user={state.users.find((u) => u.id === id)} className="size-3.5 text-[7px] ring-1 ring-background" />
             ))}
           </span>
-          {item.status === "done" && <Check className="size-3 shrink-0 text-emerald-600" />}
-          {Icon && <Icon className="size-3 shrink-0" style={{ color: meta!.color }} />}
-          <span className="truncate">{title}</span>
         </button>
       </div>
     </>
