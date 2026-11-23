@@ -240,73 +240,80 @@ function ItemBox({
   );
 }
 
-/** A long item (8 h or more, e.g. a work day) as a soft band behind its hours. Its label is a BandChip in the all-day row. */
-function LongBand({ item, lane }: { item: Item; lane: React.CSSProperties }) {
+/** Height of a band label in minutes of the grid. */
+const LABEL_MIN = (20 / HOUR_PX) * 60;
+
+/** First minute inside the band where its label does not cover an item drawn over it (else the band start). */
+function freeLabelMinute(band: Item, over: Item[]): number {
+  let t = itemStart(band);
+  for (;;) {
+    const hit = over.find((x) => itemStart(x) < t + LABEL_MIN && itemEnd(x) > t);
+    if (!hit) return t;
+    t = itemEnd(hit);
+    if (t + LABEL_MIN > itemEnd(band)) return itemStart(band);
+  }
+}
+
+/** A long item (8 h or more, e.g. a work day) as a soft band behind its hours, with a small label. */
+function LongBand({
+  item,
+  lane,
+  labelAt,
+  unmarked,
+  onClick,
+}: {
+  item: Item;
+  lane: React.CSSProperties;
+  /** Minute of the day where the label sits (moved down when an item covers the band start). */
+  labelAt: number;
+  unmarked: boolean;
+  onClick: () => void;
+}) {
   const { state } = useStore();
   const top = ((itemStart(item) - START_H * 60) / 60) * HOUR_PX;
   const height = ((itemEnd(item) - itemStart(item)) / 60) * HOUR_PX;
-  if (item.kind === "event") {
-    const meta = kindMeta(item.event.kind);
-    return (
-      <div
-        className="pointer-events-none absolute"
-        style={{ top, height, ...lane, ...hatch(meta.color), opacity: item.status === "missed" ? 0.35 : 0.6 }}
-      />
-    );
-  }
-  // The person's color tells whose work day it is (shared: neutral).
-  const owner = item.task.assigneeIds.length > 1 ? null : state.users.find((u) => u.id === item.task.assigneeIds[0]);
-  const color = owner?.color ?? "#64748b";
-  return (
-    <div
-      className="pointer-events-none absolute border-l-2"
-      style={{
-        top,
-        height,
-        ...lane,
-        backgroundColor: `color-mix(in oklab, ${color} 13%, transparent)`,
-        borderLeftColor: `color-mix(in oklab, ${color} 70%, transparent)`,
-        opacity: item.status === "missed" ? 0.45 : 1,
-      }}
-    />
-  );
-}
-
-/** Label of a long band in the all-day row: photo, title, hours. Opens the item. */
-function BandChip({ item, unmarked, onClick }: { item: Item; unmarked: boolean; onClick: () => void }) {
-  const { state } = useStore();
   const isEvent = item.kind === "event";
   const ids = isEvent ? item.event.attendeeIds : item.task.assigneeIds;
   const title = isEvent ? item.event.title : item.task.title;
-  const owner = ids.length === 1 ? state.users.find((u) => u.id === ids[0]) : null;
   const meta = isEvent ? kindMeta(item.event.kind) : null;
   const Icon = meta?.icon;
-  const short = (t: string | null) => (t ? (t.endsWith(":00") ? t.slice(0, 2) : t) : "");
+  // Tasks: the person's color tells whose work day it is (shared: neutral).
+  const owner = ids.length === 1 ? state.users.find((u) => u.id === ids[0]) : null;
+  const color = owner?.color ?? "#64748b";
+  const bandStyle: React.CSSProperties = isEvent
+    ? { ...hatch(meta!.color), opacity: item.status === "missed" ? 0.35 : 0.6 }
+    : {
+        backgroundColor: `color-mix(in oklab, ${color} 13%, transparent)`,
+        borderLeftColor: `color-mix(in oklab, ${color} 70%, transparent)`,
+        opacity: item.status === "missed" ? 0.45 : 1,
+      };
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={`${title} · ${item.startTime}–${item.endTime}`}
-      className={cn(
-        "flex w-full min-w-0 items-center gap-1 rounded border-l-2 bg-muted/60 px-1 py-0.5 text-left text-[11px] leading-tight hover:bg-accent",
-        item.status === "done" && "text-muted-foreground",
-        item.status === "missed" && "text-red-600 line-through dark:text-red-400",
-        unmarked && "outline-1 outline-amber-500 outline-dashed",
-      )}
-      style={{ borderLeftColor: meta?.color ?? owner?.color ?? "var(--muted-foreground)" }}
-    >
-      <span className="flex shrink-0 -space-x-1">
-        {ids.map((id) => (
-          <UserAvatar key={id} user={state.users.find((u) => u.id === id)} className="size-3.5 text-[7px] ring-1 ring-background" />
-        ))}
-      </span>
-      {item.status === "done" && <Check className="size-3 shrink-0 text-emerald-600" />}
-      {Icon && <Icon className="size-3 shrink-0" style={{ color: meta!.color }} />}
-      <span className="truncate font-medium">{title}</span>
-      <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">
-        {short(item.startTime)}–{short(item.endTime)}
-      </span>
-    </button>
+    <>
+      <div className={cn("pointer-events-none absolute", !isEvent && "border-l-2")} style={{ top, height, ...lane, ...bandStyle }} />
+      <div className="pointer-events-none absolute" style={{ top: top + ((labelAt - itemStart(item)) / 60) * HOUR_PX, ...lane }}>
+        <button
+          type="button"
+          onClick={onClick}
+          title={`${title} · ${item.startTime}–${item.endTime}`}
+          className={cn(
+            "pointer-events-auto m-0.5 flex max-w-[calc(100%-4px)] items-center gap-1 rounded bg-background/90 px-1 py-0.5 text-[10px] font-medium shadow-xs",
+            item.status === "done" && "text-muted-foreground",
+            item.status === "missed" && "text-red-600 line-through dark:text-red-400",
+            unmarked && "outline-1 outline-amber-500 outline-dashed",
+          )}
+        >
+          {/* Photo first: in a narrow lane the person stays visible when the title is cut. */}
+          <span className="flex shrink-0 -space-x-1">
+            {ids.map((id) => (
+              <UserAvatar key={id} user={state.users.find((u) => u.id === id)} className="size-3.5 text-[7px] ring-1 ring-background" />
+            ))}
+          </span>
+          {item.status === "done" && <Check className="size-3 shrink-0 text-emerald-600" />}
+          {Icon && <Icon className="size-3 shrink-0" style={{ color: meta!.color }} />}
+          <span className="truncate">{title}</span>
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -688,9 +695,6 @@ export default function CalendarPage() {
                   onDrop={(e) => onDrop(e, dates[i])}
                   onDoubleClick={(e) => e.target === e.currentTarget && setPanel({ type: "slot", slot: { date: dates[i], startTime: null, endTime: null } })}
                 >
-                  {backgrounds(dates[i]).map((it) => (
-                    <BandChip key={it.key} item={it} unmarked={unmarkedKeys.has(it.key)} onClick={() => openItem(it)} />
-                  ))}
                   {holidayOf(dates[i])?.map((h) => (
                     <div
                       key={h.name}
@@ -763,17 +767,33 @@ export default function CalendarPage() {
                 {shownDays.map((i, idx) =>
                   dates[i] === state.today ? <NowLine key="now" min={nowMin} left={`calc(${colWidth} * ${idx})`} width={colWidth} /> : null,
                 )}
-                {/* Long items (8 h or more) are a background band; their labels are in the all-day row, so they never cover other items. */}
+                {/* Long items (8 h or more) are a background band with a label; the label moves down when an item covers its place. */}
                 {shownDays.map((i, idx) => {
                   const bands = backgrounds(dates[i]);
-                  const lanes = dayLanes(bands, timed(dates[i]));
+                  const dayItems = timed(dates[i]);
+                  const lanes = dayLanes(bands, dayItems);
+                  const laneOfItem = (x: Item) => {
+                    const l = lanes.indexOf(ownerOf(x) ?? -1);
+                    return l >= 0 && bands.some((b) => overlaps(b, x)) ? l : -1;
+                  };
                   return bands.map((it) => {
                     const li = lanes.indexOf(ownerOf(it) ?? -1);
                     const lane =
                       li >= 0
                         ? { left: `calc(${colWidth} * ${idx} + ${colWidth} * ${li / lanes.length})`, width: `calc(${colWidth} / ${lanes.length})` }
                         : { left: `calc(${colWidth} * ${idx})`, width: colWidth };
-                    return <LongBand key={it.key} item={it} lane={lane} />;
+                    // Items drawn over this band: same lane, or full-column items (all items when the band is full width).
+                    const over = dayItems.filter((x) => (li < 0 ? true : laneOfItem(x) === li || laneOfItem(x) === -1) && overlaps(it, x));
+                    return (
+                      <LongBand
+                        key={it.key}
+                        item={it}
+                        lane={lane}
+                        labelAt={freeLabelMinute(it, over)}
+                        unmarked={unmarkedKeys.has(it.key)}
+                        onClick={() => openItem(it)}
+                      />
+                    );
                   });
                 })}
                 {shownDays.map((i, idx) => {
