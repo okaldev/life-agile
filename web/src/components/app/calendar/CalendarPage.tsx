@@ -831,9 +831,10 @@ export default function CalendarPage() {
                         key={it.key}
                         item={it}
                         unmarked={unmarkedKeys.has(it.key)}
+                        // 1 px off each end: items that follow each other get a small gap.
                         style={{
-                          top,
-                          height,
+                          top: top + 1,
+                          height: Math.max(height - 2, 16),
                           left: `calc(${base} + (${span} - 4px) * ${l.col / l.cols} + 2px)`,
                           width: `calc((${span} - 4px) / ${l.cols} - 2px)`,
                         }}
