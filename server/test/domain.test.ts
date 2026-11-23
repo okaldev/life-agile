@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
 import { test } from "node:test";
 import { openDb, type DB } from "../src/db/db.ts";
-import { getSprintByStatus, getTask, listTasks, setAssignees } from "../src/db/repo.ts";
+import { getSprint, getSprintByStatus, getTask, listTasks, setAssignees } from "../src/db/repo.ts";
 import { generateOccurrences, occurrenceDates } from "../src/domain/recurrence.ts";
 import {
   cancelPlanning,
@@ -237,4 +237,44 @@ test("early planning: scheduled start keeps the old sprint running, then starts 
   assert.equal(getTask(db, late)!.sprintId, s2.id); // open work carries over on a scheduled start
   const closed = db.prepare("SELECT status, done_sp_snapshot AS done FROM sprints s JOIN sprint_members m ON m.sprint_id = s.id WHERE s.id = ? AND m.user_id = ?").get(s1.id, alice) as any;
   assert.deepEqual([closed.status, closed.done], ["closed", 3]);
+});
+
+test("N times a week: undated occurrences, rule changes, cancelled and done tasks", async () => {
+  const { syncFutureOccurrences } = await import("../src/domain/recurrence.ts");
+  const { settleDoneTask } = await import("../src/domain/sprint.ts");
+  const { db, alice } = setup();
+  db.exec("INSERT INTO recurring_rules (title, freq, weekdays_mask, times_per_week) VALUES ('Spor', 'weekly', 0, 2)");
+  db.exec("INSERT INTO recurring_rule_assignees (rule_id, user_id) VALUES (1, 1)");
+  const s1 = startPlanning(db, "2026-11-12");
+  finishPlanning(db);
+  const occ = () => db.prepare("SELECT id, date, occurrence_date FROM tasks WHERE recurring_rule_id = 1 ORDER BY occurrence_date").all() as any[];
+  assert.deepEqual(occ().map((o) => [o.date, o.occurrence_date]), [
+    [null, "2026-11-09#1"],
+    [null, "2026-11-09#2"],
+  ]);
+  assert.equal(getTask(db, occ()[0].id)!.blocks.length, 0);
+  // 3 times a week from mid-week: the third one is added, none removed.
+  db.exec("UPDATE recurring_rules SET times_per_week = 3 WHERE id = 1");
+  syncFutureOccurrences(db, 1, "2026-11-12");
+  const { generateOccurrences } = await import("../src/domain/recurrence.ts");
+  generateOccurrences(db, s1.id, "2026-11-12", 1);
+  assert.equal(occ().length, 3);
+  db.exec("UPDATE recurring_rules SET times_per_week = 1 WHERE id = 1");
+  syncFutureOccurrences(db, 1, "2026-11-12");
+  assert.equal(occ().length, 1);
+
+  // Cancelled tasks do not carry; a task done during planning moves to the running sprint.
+  const cancelled = addTask(db, "not needed", s1.id, [alice], 3);
+  db.prepare("UPDATE tasks SET cancelled_at = '2026-11-13T10:00:00Z' WHERE id = ?").run(cancelled);
+  const early = addTask(db, "done early", s1.id, [alice], 2);
+  const s2 = startPlanning(db, "2026-11-14");
+  setStep(db, "grooming");
+  assert.equal(getTask(db, cancelled)!.sprintId, s1.id);
+  assert.equal(getTask(db, early)!.sprintId, s2.id);
+  db.prepare("UPDATE tasks SET status = 'done' WHERE id = ?").run(early);
+  assert.equal(settleDoneTask(db, early), true);
+  assert.equal(getTask(db, early)!.sprintId, s1.id);
+  finishPlanning(db);
+  assert.equal(getTask(db, cancelled)!.missedAt, null);
+  assert.equal(sprintStats(db, getSprint(db, s1.id)!).totalPlannedSp, 2 + 0); // cancelled 3 SP not counted; Spor has no SP
 });

@@ -1,13 +1,13 @@
 import type { Task } from "@shared/types.ts";
 import { ArrowLeft, ArrowRight, Plus, Repeat } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { hoverProps, markStyle, PartnerTag, usePartnerMark } from "@/lib/hover";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { SortToggle, useSortMode } from "../backlog/BacklogPage";
-import { BacklogList, TaskRow } from "../backlog/BacklogList";
+import { BacklogList, TaskRow, type RowWrap } from "../backlog/BacklogList";
 import { EmptyState, OwnerChip, OwnerStrip, sumSp, fmtSp } from "../common";
 import { useTaskDialog } from "../TaskDialog";
 import { goStep } from "./PlanningPage";
@@ -59,6 +59,45 @@ export function RecurringGroups({ tasks }: { tasks: Task[] }) {
   );
 }
 
+/** Desktop: rows drag between the backlog and the sprint (native DnD, so the backlog sort handle still works). */
+function useDragBetween(onDrop: (taskId: number, target: "backlog" | "sprint") => void) {
+  const [over, setOver] = useState<"backlog" | "sprint" | null>(null);
+  const fromHandle = useRef(false);
+  const wrap: RowWrap = (t, row) => (
+    <div
+      draggable
+      onPointerDownCapture={(e) => {
+        fromHandle.current = !!(e.target as HTMLElement).closest("[data-sort-handle]");
+      }}
+      onDragStart={(e) => {
+        if (fromHandle.current) return e.preventDefault();
+        e.dataTransfer.setData("text/task-id", String(t.id));
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      className="cursor-grab active:cursor-grabbing"
+    >
+      {row}
+    </div>
+  );
+  const zone = (target: "backlog" | "sprint") => ({
+    onDragOver: (e: React.DragEvent) => {
+      if (!e.dataTransfer.types.includes("text/task-id")) return;
+      e.preventDefault();
+      setOver(target);
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(null);
+    },
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault();
+      setOver(null);
+      const id = Number(e.dataTransfer.getData("text/task-id"));
+      if (id) onDrop(id, target);
+    },
+  });
+  return { wrap, zone, over };
+}
+
 export function GroomingStep() {
   const { state, patchTask } = useStore();
   const { openNew } = useTaskDialog();
@@ -67,11 +106,18 @@ export function GroomingStep() {
   const [pane, setPane] = useState<"backlog" | "sprint">("sprint");
 
   const all = Object.values(state.tasks);
-  const backlog = all.filter((t) => t.sprintId === null);
-  const sprintTasks = all.filter((t) => t.sprintId === planned.id);
+  const backlog = all.filter((t) => t.sprintId === null && !t.cancelledAt);
+  const sprintTasks = all.filter((t) => t.sprintId === planned.id && !t.cancelledAt);
   const carried = sprintTasks.filter((t) => t.carriedFromSprintId && !t.recurringRuleId);
   const fresh = sprintTasks.filter((t) => !t.carriedFromSprintId && !t.recurringRuleId);
   const recurring = sprintTasks.filter((t) => t.recurringRuleId);
+
+  const drag = useDragBetween((id, target) => {
+    const t = state.tasks[id];
+    if (!t || t.recurringRuleId) return;
+    if (target === "sprint" && t.sprintId !== planned.id) void patchTask(id, { sprintId: planned.id });
+    if (target === "backlog" && t.sprintId === planned.id) void patchTask(id, { sprintId: null });
+  });
 
   const toSprint = (t: Task) => (
     <Button variant="ghost" size="icon" className="size-8 shrink-0" title="Sprinte al" onClick={() => void patchTask(t.id, { sprintId: planned.id })}>
@@ -97,7 +143,10 @@ export function GroomingStep() {
         </TabsList>
       </Tabs>
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className={cn("space-y-3 rounded-lg border p-3", pane !== "backlog" && "hidden lg:block")}>
+        <section
+          {...drag.zone("backlog")}
+          className={cn("space-y-3 rounded-lg border p-3 transition-colors", pane !== "backlog" && "hidden lg:block", drag.over === "backlog" && "border-primary bg-primary/5")}
+        >
           <div className="flex items-center gap-2">
             <h3 className="font-medium">Backlog</h3>
             <span className="text-xs text-muted-foreground">
@@ -110,11 +159,14 @@ export function GroomingStep() {
           {backlog.length === 0 ? (
             <p className="text-sm text-muted-foreground">Backlog boş.</p>
           ) : (
-            <BacklogList tasks={backlog} mode={mode} action={toSprint} />
+            <BacklogList tasks={backlog} mode={mode} action={toSprint} wrap={drag.wrap} />
           )}
         </section>
 
-        <section className={cn("space-y-4 rounded-lg border p-3", pane !== "sprint" && "hidden lg:block")}>
+        <section
+          {...drag.zone("sprint")}
+          className={cn("space-y-4 rounded-lg border p-3 transition-colors", pane !== "sprint" && "hidden lg:block", drag.over === "sprint" && "border-primary bg-primary/5")}
+        >
           <div className="flex items-center gap-2">
             <h3 className="font-medium">Sprint {planned.number}</h3>
             <span className="text-xs text-muted-foreground">{fmtSp(sumSp(sprintTasks))} SP</span>
@@ -125,15 +177,15 @@ export function GroomingStep() {
           {carried.length > 0 && (
             <Section title="Devreden" hint="geçen sprintten kalanlar">
               {carried.map((t) => (
-                <TaskRow key={t.id} task={t} action={toBacklog(t)} className="border-amber-500/40" />
+                <div key={t.id}>{drag.wrap(t, <TaskRow task={t} action={toBacklog(t)} className="border-amber-500/40" />)}</div>
               ))}
             </Section>
           )}
           <Section title="Seçilenler">
             {fresh.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Backlogdan görev seçin veya yeni görev ekleyin.</p>
+              <p className="text-sm text-muted-foreground">Backlogdan görev sürükleyin, okla seçin veya yeni görev ekleyin.</p>
             ) : (
-              fresh.map((t) => <TaskRow key={t.id} task={t} action={toBacklog(t)} />)
+              fresh.map((t) => <div key={t.id}>{drag.wrap(t, <TaskRow task={t} action={toBacklog(t)} />)}</div>)
             )}
           </Section>
           {recurring.length > 0 && (

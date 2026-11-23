@@ -21,6 +21,11 @@ Code: `server/src/domain/blocks.ts`, `server/src/domain/events.ts`, `server/src/
 
 Timed events of 8 hours or more (for example "İstanbul'dayım 00:15–23:59") are drawn as a hatched background band over the whole day column, not as a column item. Tasks keep the full width. A small label (title, kind icon, photos) sticks just below the day header and opens the event; the rest of the band lets clicks and drags reach the grid.
 
+## Multi-day items and holidays
+
+- A task part or a one-off event can have `end_date` (inclusive, max 32 days, no times). The week view draws it as one bar below the all-day row across its days (cut ends when it starts or ends outside the week); the day view shows it on each of its days. It counts as unmarked only after its last day.
+- Public holidays (`shared/holidays.ts`, `HOLIDAYS=TR` by default): fixed national days, Cumhuriyet Bayramı arifesi (half day), Ramazan Bayramı (3 days) and Kurban Bayramı (4 days) with their arife (half day). Bayram dates: a table for 2025–2030 (Diyanet), the Umm al-Qura calendar (Intl) for other years.
+
 ## Marks: done / missed
 
 A part has status `planned`, `done` or `missed`. An event has the same three values (shown as Gerçekleşti / Gerçekleşmedi).

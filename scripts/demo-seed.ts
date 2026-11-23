@@ -60,6 +60,7 @@ const patch = (as: number, id: number, body: unknown) => call(as, "PATCH", `/api
 // Recurring rules (occurrences are created when a sprint enters grooming).
 await call(DENIZ, "POST", "/api/recurring", { title: "Sabah koşusu", freq: "weekly", weekdaysMask: 0b0010101, startTime: "07:00", endTime: "07:45", assigneeIds: [DENIZ], defaultSp: 1, categoryId: cat("Sağlık") });
 await call(ECE, "POST", "/api/recurring", { title: "Kitap okuma", freq: "weekdays", startTime: "22:00", endTime: "22:30", assigneeIds: [ECE], defaultSp: 0.5, categoryId: cat("Kişisel") });
+await call(ECE, "POST", "/api/recurring", { title: "Spor salonu", freq: "weekly", weekdaysMask: 0, timesPerWeek: 2, assigneeIds: [ECE], defaultSp: 1, categoryId: cat("Sağlık") });
 await call(DENIZ, "POST", "/api/recurring", { title: "Haftalık market", freq: "weekly", weekdaysMask: 1 << 5, startTime: "11:00", endTime: "12:00", assigneeIds: [DENIZ, ECE], defaultSp: 1, categoryId: cat("Ev") });
 
 // Backlog.
@@ -145,8 +146,13 @@ await part(DENIZ, extra.id, day(thisWeek, 5), "10:00", "11:00");
 for (const r of db.prepare("SELECT b.id, b.date FROM task_blocks b JOIN tasks t ON t.id = b.task_id WHERE t.sprint_id = ? AND t.recurring_rule_id IS NOT NULL AND b.date < ?").all(s2.id, now) as { id: number; date: string }[])
   await mark(DENIZ, r.id, r.date === day(thisWeek, 1) ? "missed" : "done");
 
+const thesis = await task(ECE, s2.id, { title: "Tez bölümünü yaz", who: [ECE], cat: "İş", sp: 3 });
+await call(ECE, "POST", `/api/tasks/${thesis.id}/blocks`, { date: day(thisWeek, 1), endDate: day(thisWeek, 3) });
+await call(ECE, "POST", `/api/retro/${s1.id}`, { kind: "try", text: "Pazar akşamı haftayı birlikte planlayalım" });
+
 // Calendar events.
 await call(DENIZ, "POST", "/api/calendar-events", { title: "Dişçi", kind: "out", date: day(thisWeek, 3), startTime: "16:00", endTime: "17:00", attendeeIds: [ECE] });
+await call(DENIZ, "POST", "/api/calendar-events", { title: "Kapadokya gezisi", kind: "out", date: day(thisWeek, 5), endDate: day(thisWeek, 6), attendeeIds: [DENIZ, ECE] });
 await call(ECE, "POST", "/api/calendar-events", { title: "Arkadaşlar akşam yemeğinde", kind: "guest", date: day(thisWeek, 4), startTime: "19:30", endTime: "23:00", attendeeIds: [DENIZ, ECE] });
 await call(DENIZ, "POST", "/api/calendar-events", { title: "Ekip toplantısı", kind: "meet", date: day(thisWeek, 0), startTime: "10:00", endTime: "11:00", attendeeIds: [DENIZ], repeat: { freq: "weekly", weekdaysMask: 1 } });
 

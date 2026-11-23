@@ -265,4 +265,13 @@ export const MIGRATIONS: string[] = [
   `
   ALTER TABLE sprints ADD COLUMN scheduled_at TEXT;
   `,
+  // 8: cancelled tasks (not done, never carried), "N times a week" recurring rules without a day,
+  // multi-day events and task parts (inclusive end date), and retro actions turned into tasks.
+  `
+  ALTER TABLE tasks ADD COLUMN cancelled_at TEXT;
+  ALTER TABLE recurring_rules ADD COLUMN times_per_week INTEGER;
+  ALTER TABLE calendar_events ADD COLUMN end_date TEXT;
+  ALTER TABLE task_blocks ADD COLUMN end_date TEXT;
+  ALTER TABLE retro_items ADD COLUMN task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL;
+  `,
 ];

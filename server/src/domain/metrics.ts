@@ -17,7 +17,7 @@ export function burndown(db: DB, todayDate = today()): Metrics["burndown"] {
   const active = getSprintByStatus(db, "active");
   if (!active) return [];
   const tasks = db
-    .prepare("SELECT points AS sp, status, done_at FROM tasks WHERE sprint_id = ?")
+    .prepare("SELECT points AS sp, status, done_at FROM tasks WHERE sprint_id = ? AND cancelled_at IS NULL")
     .all(active.id) as { sp: number | null; status: string; done_at: string | null }[];
   const planned = tasks.reduce((s, t) => s + (t.sp ?? 0), 0);
   const doneByDate = tasks

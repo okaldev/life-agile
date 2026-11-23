@@ -18,6 +18,7 @@ const FIELDS: (keyof Task)[] = [
   "progressManual",
   "unplannedAt",
   "missedAt",
+  "cancelledAt",
 ];
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -28,13 +29,13 @@ export interface Change {
   newValue: unknown;
 }
 
-/** Field changes between two versions of a task. unplannedAt/missedAt are stored as booleans. */
+/** Field changes between two versions of a task. unplannedAt/missedAt/cancelledAt are stored as booleans. */
 export function diffTask(prev: Task, next: Task): Change[] {
   const out: Change[] = [];
   for (const f of FIELDS) {
     let a: unknown = prev[f];
     let b: unknown = next[f];
-    if (f === "unplannedAt" || f === "missedAt") {
+    if (f === "unplannedAt" || f === "missedAt" || f === "cancelledAt") {
       a = !!a;
       b = !!b;
     }

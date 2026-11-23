@@ -26,6 +26,7 @@ export function mapEvent(r: Row): CalendarEvent {
     note: r.note,
     kind: r.kind,
     date: r.date,
+    endDate: r.end_date ?? null,
     startTime: r.start_time ?? null,
     endTime: r.end_time ?? null,
     status: r.status,
@@ -76,21 +77,30 @@ export interface EventInput {
   note: string;
   kind: EventKind;
   date: string;
+  /** Inclusive last day of a multi-day event (no times). */
+  endDate?: string | null;
   startTime: string | null;
   endTime: string | null;
   attendeeIds: number[];
 }
 
+/** A multi-day item has no times; a one-day item has no end date. */
+export function cleanSpan(date: string, endDate: string | null | undefined, start: string | null, end: string | null) {
+  const multi = !!endDate && endDate > date;
+  return multi ? { endDate: endDate!, start: null, end: null } : { endDate: null, start, end };
+}
+
 export function createEvent(db: DB, input: EventInput, userId: number, ruleId: number | null = null): CalendarEvent {
-  const { start, end } = cleanTimes(input.startTime, input.endTime);
+  const t = cleanTimes(input.startTime, input.endTime);
+  const { endDate, start, end } = cleanSpan(input.date, ruleId ? null : input.endDate, t.start, t.end);
   const now = nowIso();
   return tx(db, () => {
     const res = db
       .prepare(
-        `INSERT INTO calendar_events (title, note, kind, date, start_time, end_time, rule_id, occurrence_date, created_by, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO calendar_events (title, note, kind, date, end_date, start_time, end_time, rule_id, occurrence_date, created_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(input.title, input.note, input.kind, input.date, start, end, ruleId, ruleId ? input.date : null, userId, now, now);
+      .run(input.title, input.note, input.kind, input.date, endDate, start, end, ruleId, ruleId ? input.date : null, userId, now, now);
     const id = Number(res.lastInsertRowid);
     setAttendees(db, "calendar_event_attendees", id, input.attendeeIds);
     return getEvent(db, id)!;
@@ -105,12 +115,13 @@ export function updateEvent(
   const prev = getEvent(db, id);
   if (!prev) return null;
   const next = { ...prev, ...patch };
-  const { start, end } = cleanTimes(next.startTime, next.endTime);
+  const t = cleanTimes(next.startTime, next.endTime);
+  const { endDate, start, end } = cleanSpan(next.date, prev.ruleId ? null : next.endDate, t.start, t.end);
   tx(db, () => {
     db.prepare(
-      `UPDATE calendar_events SET title = ?, note = ?, kind = ?, date = ?, start_time = ?, end_time = ?, status = ?, updated_at = ?
+      `UPDATE calendar_events SET title = ?, note = ?, kind = ?, date = ?, end_date = ?, start_time = ?, end_time = ?, status = ?, updated_at = ?
        WHERE id = ?`,
-    ).run(next.title, next.note, next.kind, next.date, start, end, next.status, nowIso(), id);
+    ).run(next.title, next.note, next.kind, next.date, endDate, start, end, next.status, nowIso(), id);
     if (patch.attendeeIds) setAttendees(db, "calendar_event_attendees", id, patch.attendeeIds);
   });
   return getEvent(db, id);
@@ -170,7 +181,8 @@ export function materializeEvents(db: DB, from: string, to: string, onlyRuleId?:
 }
 
 export function listEvents(db: DB, from: string, to: string): CalendarEvent[] {
-  return (db.prepare(`${EVENT_SELECT} WHERE e.date BETWEEN ? AND ? ORDER BY e.date, coalesce(e.start_time, ''), e.id`).all(from, to) as Row[]).map(
+  // Overlap: multi-day events that started before the range are included too.
+  return (db.prepare(`${EVENT_SELECT} WHERE e.date <= ? AND coalesce(e.end_date, e.date) >= ? ORDER BY e.date, coalesce(e.start_time, ''), e.id`).all(to, from) as Row[]).map(
     mapEvent,
   );
 }

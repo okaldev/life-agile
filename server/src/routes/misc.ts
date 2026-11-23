@@ -43,6 +43,7 @@ export function bootstrap(db: DB, cfg: Config, c: C): Bootstrap {
     today: today(),
     timeZone: timeZone(),
     sourceUrl: cfg.sourceUrl,
+    holidays: cfg.holidays,
   };
 }
 
@@ -91,6 +92,11 @@ export function miscRoutes(db: DB, cfg: Config): Hono<AppEnv> {
     if ("endTime" in b) cols.end_time = v.time(b.endTime, "endTime");
     if ("defaultSp" in b) cols.default_sp = v.points(b.defaultSp, "defaultSp");
     if ("active" in b) cols.active = b.active ? 1 : 0;
+    if ("timesPerWeek" in b) {
+      cols.times_per_week = v.int(b.timesPerWeek, "timesPerWeek", 1, 7);
+      // "N times a week" has no days and no time.
+      if (cols.times_per_week) Object.assign(cols, { freq: "weekly", weekdays_mask: 0, start_time: null, end_time: null });
+    }
     return cols;
   };
 

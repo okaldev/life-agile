@@ -4,7 +4,14 @@ import type { DB } from "../db/db.ts";
 import { nowIso, tx } from "../db/db.ts";
 import { getRule, getSprint, listRules } from "../db/repo.ts";
 import { addBlock, syncTaskSchedule } from "./blocks.ts";
-import { weekDates, weekdayIndex } from "./time.ts";
+import { weekDates, weekdayIndex, weekStart } from "./time.ts";
+
+/**
+ * "N times a week" rules have no days: each sprint gets N undated occurrences. Their occurrence key is
+ * "<week start>#<n>" (unique per rule and sorts inside the week, so carry and cancel rules still work).
+ */
+export const flexKey = (weekStart: string, n: number) => `${weekStart}#${n}`;
+export const isFlexKey = (key: string) => key.includes("#");
 
 export function ruleHitsDay(rule: Pick<RecurringRule, "freq" | "weekdaysMask">, weekday: number): boolean {
   if (rule.freq === "daily") return true;
@@ -46,8 +53,15 @@ export function generateOccurrences(db: DB, sprintId: number, fromDate = "0000-0
     const assign = db.prepare("INSERT INTO task_assignees (task_id, user_id) VALUES (?, ?)");
     for (const rule of rules) {
       const sp = previousSp(db, rule, sprintId);
-      for (const date of occurrenceDates(rule, sprint.startDate)) {
-        if (date < fromDate) continue;
+      const flex = rule.timesPerWeek ?? 0;
+      // Fixed days: one dated occurrence per day. Flexible: N undated ones while the week is not over.
+      const keys = flex
+        ? sprint.endDate < fromDate
+          ? []
+          : Array.from({ length: flex }, (_, i) => flexKey(sprint.startDate, i + 1))
+        : occurrenceDates(rule, sprint.startDate).filter((d) => d >= fromDate);
+      for (const key of keys) {
+        const date = flex ? null : key;
         const now = nowIso();
         const res = insert.run(
           rule.title,
@@ -56,10 +70,10 @@ export function generateOccurrences(db: DB, sprintId: number, fromDate = "0000-0
           sprintId,
           sp,
           date,
-          rule.startTime,
-          rule.startTime ? rule.endTime : null,
+          date ? rule.startTime : null,
+          date && rule.startTime ? rule.endTime : null,
           rule.id,
-          date,
+          key,
           now,
           now,
           sprint.status === "active" ? now : null, // a rule added mid-sprint is unplanned work
@@ -67,7 +81,7 @@ export function generateOccurrences(db: DB, sprintId: number, fromDate = "0000-0
         if (res.changes > 0) {
           const id = Number(res.lastInsertRowid);
           for (const u of rule.assigneeIds) assign.run(id, u);
-          addBlock(db, id, { date, startTime: rule.startTime, endTime: rule.endTime });
+          if (date) addBlock(db, id, { date, startTime: rule.startTime, endTime: rule.endTime });
           created.push(id);
         }
       }
@@ -86,17 +100,38 @@ export function syncFutureOccurrences(
   const removed: number[] = [];
   const rule = getRule(db, ruleId);
   if (!rule) return { changed, removed };
+  // Flexible occurrences of the current week count as future too (they have no date).
   const rows = db
     .prepare(
       `SELECT id, occurrence_date FROM tasks
-       WHERE recurring_rule_id = ? AND status = 'todo' AND missed_at IS NULL AND occurrence_date >= ?`,
+       WHERE recurring_rule_id = ? AND status = 'todo' AND missed_at IS NULL
+         AND (occurrence_date >= ? OR (occurrence_date LIKE '%#%' AND substr(occurrence_date, 1, 10) >= ?))`,
     )
-    .all(ruleId, fromDate) as { id: number; occurrence_date: string }[];
+    .all(ruleId, fromDate, weekStart(fromDate)) as { id: number; occurrence_date: string }[];
   tx(db, () => {
     for (const r of rows) {
-      if (!rule.active || !ruleHitsDay(rule, weekdayIndex(r.occurrence_date))) {
+      const flex = isFlexKey(r.occurrence_date);
+      const keep = !rule.active
+        ? false
+        : rule.timesPerWeek
+          ? flex && Number(r.occurrence_date.split("#")[1]) <= rule.timesPerWeek
+          : !flex && ruleHitsDay(rule, weekdayIndex(r.occurrence_date));
+      if (!keep) {
         db.prepare("DELETE FROM tasks WHERE id = ?").run(r.id);
         removed.push(r.id);
+        continue;
+      }
+      if (flex) {
+        db.prepare("UPDATE tasks SET title = ?, description = ?, category_id = ?, updated_at = ? WHERE id = ?").run(
+          rule.title,
+          rule.description,
+          rule.categoryId,
+          nowIso(),
+          r.id,
+        );
+        db.prepare("DELETE FROM task_assignees WHERE task_id = ?").run(r.id);
+        for (const u of rule.assigneeIds) db.prepare("INSERT INTO task_assignees (task_id, user_id) VALUES (?, ?)").run(r.id, u);
+        changed.push(r.id);
         continue;
       }
       db.prepare(

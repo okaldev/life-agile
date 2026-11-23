@@ -42,7 +42,7 @@ export const TASK_SELECT = `
     (SELECT count(*) FROM checklist_items c WHERE c.task_id = t.id) AS cl_total,
     (SELECT count(*) FROM checklist_items c WHERE c.task_id = t.id AND c.done = 1) AS cl_done,
     (SELECT count(*) FROM comments m WHERE m.task_id = t.id) AS comment_count,
-    (SELECT json_group_array(json_object('id', b.id, 'taskId', b.task_id, 'date', b.date,
+    (SELECT json_group_array(json_object('id', b.id, 'taskId', b.task_id, 'date', b.date, 'endDate', b.end_date,
         'startTime', b.start_time, 'endTime', b.end_time, 'status', b.status))
      FROM (SELECT * FROM task_blocks WHERE task_id = t.id ORDER BY date, coalesce(start_time, ''), id) b) AS blocks_json
   FROM tasks t`;
@@ -58,6 +58,7 @@ export function mapTask(r: Row): Task {
     status: r.status,
     sp: r.points ?? null,
     unplannedAt: r.unplanned_at ?? null,
+    cancelledAt: r.cancelled_at ?? null,
     priority: r.priority,
     dueDate: r.due_date ?? null,
     date: r.date ?? null,
@@ -170,6 +171,7 @@ export function mapRule(r: Row): RecurringRule {
     categoryId: r.category_id ?? null,
     freq: r.freq,
     weekdaysMask: r.weekdays_mask,
+    timesPerWeek: r.times_per_week ?? null,
     startTime: r.start_time ?? null,
     endTime: r.end_time ?? null,
     defaultSp: r.default_sp ?? null,
@@ -200,7 +202,7 @@ export function listCategories(db: DB): Category[] {
 }
 
 export function mapRetro(r: Row): RetroItem {
-  return { id: r.id, sprintId: r.sprint_id, userId: r.user_id, kind: r.kind, text: r.text, createdAt: r.created_at };
+  return { id: r.id, sprintId: r.sprint_id, userId: r.user_id, kind: r.kind, text: r.text, taskId: r.task_id ?? null, createdAt: r.created_at };
 }
 
 export function mapAvailability(r: Row): Availability {

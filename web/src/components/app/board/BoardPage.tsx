@@ -41,6 +41,9 @@ function DraggableCard({ task }: { task: Task }) {
 function Column({ status, tasks, sprintId }: { status: TaskStatus; tasks: Task[]; sprintId: number }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const { openNew } = useTaskDialog();
+  // Cancelled tasks sit at the end of the done column; they do not count.
+  const live = tasks.filter((t) => !t.cancelledAt);
+  const cancelled = tasks.length - live.length;
   return (
     <section
       ref={setNodeRef}
@@ -52,7 +55,8 @@ function Column({ status, tasks, sprintId }: { status: TaskStatus; tasks: Task[]
       <header className="flex items-center gap-2 px-1.5 pb-2 text-sm">
         <span className="font-medium">{STATUS_LABEL[status]}</span>
         <span className="text-muted-foreground tabular-nums">
-          {tasks.length} · {fmtSp(sumSp(tasks))} SP
+          {live.length} · {fmtSp(sumSp(live))} SP
+          {cancelled > 0 && ` · ${cancelled} iptal`}
         </span>
         <Button
           variant="ghost"
@@ -120,16 +124,29 @@ export default function BoardPage() {
     () => (sprint ? Object.values(state.tasks).filter((t) => isActiveWork(t, state)) : []),
     [state.tasks, sprint, state.plannedSprint],
   );
+  // Recurring: per rule, the open occurrences up to today; when none is today, the next open one.
+  // "Gelecek tekrarlar" shows all of them (openwiki/requirements.md, Board).
+  const nextRecurring = useMemo(() => {
+    const keep = new Set<number>();
+    const byRule = new Map<number, Task[]>();
+    for (const t of sprintTasks)
+      if (t.recurringRuleId && t.status === "todo" && !t.missedAt && !t.cancelledAt && t.date && t.date > state.today)
+        byRule.set(t.recurringRuleId, [...(byRule.get(t.recurringRuleId) ?? []), t]);
+    for (const [ruleId, list] of byRule) {
+      const hasToday = sprintTasks.some((t) => t.recurringRuleId === ruleId && t.date === state.today && !t.missedAt);
+      if (!hasToday) keep.add(list.sort((a, b) => a.date!.localeCompare(b.date!))[0].id);
+    }
+    return keep;
+  }, [sprintTasks, state.today]);
   const visible = useMemo(
     () =>
       sprintTasks
         .filter((t) => matchesView(t, state.view))
-        // Future recurring occurrences clutter the board; hide them unless asked.
-        .filter((t) => showFuture || !t.recurringRuleId || (t.date ?? "") <= state.today || t.status !== "todo")
+        .filter((t) => showFuture || !t.recurringRuleId || !t.date || t.date <= state.today || t.status !== "todo" || nextRecurring.has(t.id))
         // Missed recurring occurrences are finished business; the calendar and dashboard still show them.
         .filter((t) => !(t.recurringRuleId && t.missedAt))
         .sort(compareTasks),
-    [sprintTasks, state.view, state.today, showFuture],
+    [sprintTasks, state.view, state.today, showFuture, nextRecurring],
   );
 
   if (!sprint) return <NoSprint />;
@@ -159,7 +176,7 @@ export default function BoardPage() {
   return (
     // Desktop: the board fits the screen; only the columns scroll.
     <div className="flex flex-col gap-3 md:h-[calc(100dvh-6rem-1px)]">
-      <CompactSprintHeader sprint={sprint} tasks={sprintTasks} />
+      <CompactSprintHeader sprint={sprint} tasks={sprintTasks.filter((t) => !t.cancelledAt)} />
       <div className="flex flex-wrap items-center gap-2">
         <ViewTabs />
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -180,7 +197,12 @@ export default function BoardPage() {
       <DndContext sensors={sensors} onDragStart={(e) => setDragId(Number(e.active.id))} onDragEnd={onDragEnd} onDragCancel={() => setDragId(null)}>
         <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 md:min-h-0 md:flex-1 md:pb-0">
           {COLUMNS.map((s) => (
-            <Column key={s} status={s} sprintId={sprint.id} tasks={visible.filter((t) => t.status === s)} />
+            <Column
+              key={s}
+              status={s}
+              sprintId={sprint.id}
+              tasks={visible.filter((t) => (t.cancelledAt ? "done" : t.status) === s).sort((a, b) => Number(!!a.cancelledAt) - Number(!!b.cancelledAt))}
+            />
           ))}
         </div>
         <DragOverlay>{dragId && state.tasks[dragId] ? <TaskCard task={state.tasks[dragId]} dragging /> : null}</DragOverlay>

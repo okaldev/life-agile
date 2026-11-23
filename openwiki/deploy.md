@@ -24,6 +24,7 @@ All values are optional. Put them in `.env` (see `.env.example`). Docker Compose
 | `ALLOWED_EMAILS` | empty | `email:Name` pairs, created at start |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | `data/vapid.json` | Web Push keys. Created on the first start when empty |
 | `SOURCE_URL` | this repository | "Kaynak kodu" link in the app (AGPL-3.0) |
+| `HOLIDAYS` | `TR` | Public holidays on the calendars and in capacity: `TR` (Turkey) or `none` |
 | `DB_PATH` | `data/agile.db` | SQLite file |
 | `DEV_LOGIN` | off | `1` only for local development (refused in production) |
 

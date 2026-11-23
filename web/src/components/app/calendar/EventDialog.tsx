@@ -24,6 +24,7 @@ export interface EventDraft {
   note?: string;
   kind?: EventKind;
   date: string;
+  endDate?: string | null;
   startTime?: string | null;
   endTime?: string | null;
   attendeeIds?: number[];
@@ -56,6 +57,7 @@ export function EventForm({ draft, onClose }: { draft: EventDraft; onClose: () =
     note: draft.note ?? "",
     kind: draft.kind ?? ("meet" as EventKind),
     date: draft.date,
+    endDate: draft.endDate ?? null,
     startTime: draft.startTime ?? null,
     endTime: draft.endTime ?? null,
     attendeeIds: draft.attendeeIds ?? (state.me ? [state.me.id] : []),
@@ -83,13 +85,19 @@ export function EventForm({ draft, onClose }: { draft: EventDraft; onClose: () =
       await api.post("/api/calendar-events", {
         ...fields,
         date: d.date,
+        endDate: repeat === "none" && !d.startTime ? d.endDate : null,
         ...(repeat !== "none" ? { repeat: { freq: repeat, weekdaysMask: mask } } : {}),
       });
     } else if (wholeSeries && draft.ruleId) {
       await api.patch(`/api/event-rules/${draft.ruleId}`, fields);
       await api.patch(`/api/calendar-events/${draft.id}`, { status: d.status });
     } else {
-      await api.patch(`/api/calendar-events/${draft.id}`, { ...fields, date: d.date, status: d.status });
+      await api.patch(`/api/calendar-events/${draft.id}`, {
+        ...fields,
+        date: d.date,
+        status: d.status,
+        ...(draft.ruleId ? {} : { endDate: d.startTime ? null : d.endDate }),
+      });
     }
     onClose();
   };
@@ -148,7 +156,17 @@ export function EventForm({ draft, onClose }: { draft: EventDraft; onClose: () =
             <Input type="time" disabled={!d.startTime} value={d.endTime ?? ""} onChange={(e) => set({ endTime: e.target.value || null })} />
           </div>
         </div>
-        <p className="-mt-2 text-xs text-muted-foreground">Saat boşsa tüm gün sayılır.</p>
+        {!d.startTime && repeat === "none" && !draft.ruleId ? (
+          <div className="-mt-1 grid grid-cols-3 gap-3">
+            <div className="col-span-3 space-y-1.5 sm:col-span-1">
+              <Label className="text-xs text-muted-foreground">Bitiş günü (ops.)</Label>
+              <DatePicker clearable placeholder="Tek gün" value={d.endDate} onChange={(endDate) => set({ endDate: endDate && endDate > d.date ? endDate : null })} />
+            </div>
+            <p className="col-span-3 self-end text-xs text-muted-foreground sm:col-span-2">Saat boşsa tüm gün sayılır. Bitiş günü seçerseniz takvimde günler boyunca tek çubuk olur.</p>
+          </div>
+        ) : (
+          <p className="-mt-2 text-xs text-muted-foreground">Saat boşsa tüm gün sayılır.</p>
+        )}
         {!editing && (
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Tekrar</Label>

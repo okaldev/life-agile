@@ -1,6 +1,6 @@
 // Task dialog sections: calendar parts (split a task) and completion percentage.
 import type { Task, TaskBlock } from "@shared/types.ts";
-import { Check, Plus, Trash2, X } from "lucide-react";
+import { Check, MoveRight, Plus, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,58 +17,83 @@ function PartRow({ block, index }: { block: TaskBlock; index: number }) {
     if (await ask({ title: "Bu parça silinsin mi?", description: "Görev kalır, sadece bu takvim parçası silinir." }))
       void api.del(`/api/blocks/${block.id}`);
   };
+  const [multi, setMulti] = useState(!!block.endDate);
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <span className="w-6 text-xs text-muted-foreground">{index + 1}.</span>
-      <DatePicker
-        size="sm"
-        className="h-8 w-[9.5rem]"
-        value={block.date}
-        onChange={(date) => date && date !== block.date && patch({ date })}
-      />
-      <Input
-        type="time"
-        defaultValue={block.startTime ?? ""}
-        className="h-8 w-[5.5rem] px-2"
-        onBlur={(e) => (e.target.value || null) !== block.startTime && patch({ startTime: e.target.value || null })}
-      />
-      <Input
-        type="time"
-        defaultValue={block.endTime ?? ""}
-        disabled={!block.startTime}
-        className="h-8 w-[5.5rem] px-2"
-        onBlur={(e) => (e.target.value || null) !== block.endTime && patch({ endTime: e.target.value || null })}
-      />
-      {/* Fixed-width toggle: ✓ done, ✕ missed. A click on the active one sets the part back to planned. */}
-      <div className="flex h-8 overflow-hidden rounded-md border" role="group" aria-label="Parça durumu">
-        <button
-          type="button"
-          onClick={() => patch({ status: block.status === "done" ? "planned" : "done" })}
-          title={block.status === "done" ? "Yapıldı (geri almak için tıkla)" : "Yapıldı"}
-          aria-pressed={block.status === "done"}
-          className={cn(
-            "flex w-8 items-center justify-center text-muted-foreground hover:bg-accent",
-            block.status === "done" && "bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-400",
-          )}
-        >
-          <Check className="size-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => patch({ status: block.status === "missed" ? "planned" : "missed" })}
-          title={block.status === "missed" ? "Yapılmadı (geri almak için tıkla)" : "Yapılmadı"}
-          aria-pressed={block.status === "missed"}
-          className={cn(
-            "flex w-8 items-center justify-center border-l text-muted-foreground hover:bg-accent",
-            block.status === "missed" && "bg-red-500/15 text-red-600 hover:bg-red-500/20 dark:text-red-400",
-          )}
-        >
-          <X className="size-4" />
-        </button>
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="w-6 text-xs text-muted-foreground">{index + 1}.</span>
+        <DatePicker
+          size="sm"
+          className="h-8 w-[9.5rem]"
+          value={block.date}
+          onChange={(date) => date && date !== block.date && patch({ date })}
+        />
+        <Input
+          type="time"
+          defaultValue={block.startTime ?? ""}
+          disabled={!!block.endDate}
+          className="h-8 w-[5.5rem] px-2"
+          onBlur={(e) => (e.target.value || null) !== block.startTime && patch({ startTime: e.target.value || null })}
+        />
+        <Input
+          type="time"
+          defaultValue={block.endTime ?? ""}
+          disabled={!block.startTime}
+          className="h-8 w-[5.5rem] px-2"
+          onBlur={(e) => (e.target.value || null) !== block.endTime && patch({ endTime: e.target.value || null })}
+        />
+        {/* Fixed-width toggle: ✓ done, ✕ missed. A click on the active one sets the part back to planned. */}
+        <div className="flex h-8 overflow-hidden rounded-md border" role="group" aria-label="Parça durumu">
+          <button
+            type="button"
+            onClick={() => patch({ status: block.status === "done" ? "planned" : "done" })}
+            title={block.status === "done" ? "Yapıldı (geri almak için tıkla)" : "Yapıldı"}
+            aria-pressed={block.status === "done"}
+            className={cn(
+              "flex w-8 items-center justify-center text-muted-foreground hover:bg-accent",
+              block.status === "done" && "bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-400",
+            )}
+          >
+            <Check className="size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => patch({ status: block.status === "missed" ? "planned" : "missed" })}
+            title={block.status === "missed" ? "Yapılmadı (geri almak için tıkla)" : "Yapılmadı"}
+            aria-pressed={block.status === "missed"}
+            className={cn(
+              "flex w-8 items-center justify-center border-l text-muted-foreground hover:bg-accent",
+              block.status === "missed" && "bg-red-500/15 text-red-600 hover:bg-red-500/20 dark:text-red-400",
+            )}
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+        <Button variant="ghost" size="icon" className="size-8" onClick={remove} aria-label="Parçayı sil">
+          <Trash2 className="size-3.5" />
+        </Button>
       </div>
-      <Button variant="ghost" size="icon" className="size-8" onClick={remove} aria-label="Parçayı sil">
-        <Trash2 className="size-3.5" />
-      </Button>
+      {/* Multi-day part: an end date (no times); drawn as one bar across the days. */}
+      {multi ? (
+        <div className="flex items-center gap-1.5 pl-7 text-xs text-muted-foreground">
+          <MoveRight className="size-3.5" /> Bitiş günü
+          <DatePicker
+            size="sm"
+            clearable
+            className="h-7 w-[9.5rem]"
+            placeholder="Tek gün"
+            value={block.endDate}
+            onChange={(endDate) => {
+              patch({ endDate: endDate && endDate > block.date ? endDate : null });
+              if (!endDate) setMulti(false);
+            }}
+          />
+        </div>
+      ) : (
+        <button type="button" onClick={() => setMulti(true)} className="pl-7 text-xs text-muted-foreground hover:text-foreground">
+          + Birden çok gün
+        </button>
+      )}
     </div>
   );
 }
@@ -83,9 +108,7 @@ export function PartsSection({ task }: { task: Task }) {
     <section className="space-y-2">
       <div className="flex items-center gap-2">
         <h3 className="text-sm font-medium">Takvim parçaları</h3>
-        <span className="text-xs text-muted-foreground">
-          {task.blocks.length === 0 ? "takvimde yok" : `${task.blocks.length} parça`}
-        </span>
+        <span className="text-xs text-muted-foreground">{task.blocks.length === 0 ? "takvimde yok" : `${task.blocks.length} parça`}</span>
         {!task.recurringRuleId && (
           <Button variant="ghost" size="sm" className="ml-auto h-7" onClick={add}>
             <Plus className="size-3.5" /> Parça ekle

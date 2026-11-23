@@ -14,6 +14,8 @@ export interface TaskBlock {
   id: number;
   taskId: number;
   date: string;
+  /** Multi-day part (inclusive last day, no times). Null for a one-day part. */
+  endDate: string | null;
   startTime: string | null;
   endTime: string | null;
   status: MarkStatus;
@@ -25,6 +27,8 @@ export interface CalendarEvent {
   note: string;
   kind: EventKind;
   date: string;
+  /** Multi-day event (inclusive last day, no times). Null for a one-day event. */
+  endDate: string | null;
   startTime: string | null;
   endTime: string | null;
   status: MarkStatus;
@@ -105,6 +109,8 @@ export interface Task {
   missedAt: string | null;
   /** Set when the task was added to an already running sprint (change request). */
   unplannedAt: string | null;
+  /** Cancelled: not needed any more. Not done, not carried, not counted. */
+  cancelledAt: string | null;
 }
 
 /** One change of a task. field: a Task field name, or created / part.add / part.remove / part.status / checklist.add / checklist.done / comment. */
@@ -167,6 +173,8 @@ export interface RecurringRule {
   categoryId: number | null;
   freq: RecurringFreq;
   weekdaysMask: number;
+  /** "N times a week" without fixed days: N undated occurrences per sprint (freq is "weekly", mask 0). */
+  timesPerWeek: number | null;
   startTime: string | null;
   endTime: string | null;
   defaultSp: number | null;
@@ -180,6 +188,8 @@ export interface RetroItem {
   userId: number;
   kind: RetroKind;
   text: string;
+  /** Action ("try") turned into a backlog task. */
+  taskId: number | null;
   createdAt: string;
 }
 
@@ -232,6 +242,8 @@ export interface Bootstrap {
   timeZone: string;
   /** Source code link (AGPL-3.0). */
   sourceUrl: string;
+  /** Public holidays country ("TR") or null. */
+  holidays: string | null;
 }
 
 export interface SprintStats {

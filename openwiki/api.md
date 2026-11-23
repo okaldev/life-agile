@@ -30,7 +30,7 @@ All `/api/*` routes need a session cookie, except `/api/health`. Write calls (`P
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/health` | `{ok: true}` |
-| GET | `/api/bootstrap` | me (with `isAdmin`), users, categories, active + planned sprint with members, their tasks and the backlog, recurring rules, presence, VAPID public key, `timeZone`, `sourceUrl` |
+| GET | `/api/bootstrap` | me (with `isAdmin`), users, categories, active + planned sprint with members, their tasks and the backlog, recurring rules, presence, VAPID public key, `timeZone`, `sourceUrl`, `holidays` |
 | GET | `/api/events` | SSE stream ([realtime.md](realtime.md)) |
 | POST | `/api/presence` | `{page, taskId}` |
 | GET | `/api/activity?limit=` | Recent activity |
@@ -43,11 +43,11 @@ All `/api/*` routes need a session cookie, except `/api/health`. Write calls (`P
 | GET | `/api/tasks/:id` | Task with checklist and comments |
 | GET | `/api/tasks/:id/history` | Change history, newest first |
 | POST | `/api/tasks` | Create. `assigneeIds` required |
-| PATCH | `/api/tasks/:id` | Partial update (any field, `assigneeIds`, `progressManual`, `unplanned: boolean`). `sp` must be 0, 0.5, 1, 2, 3, 4, 5 or null. `date/startTime/endTime` edit the single part; 409 if the task has several parts |
+| PATCH | `/api/tasks/:id` | Partial update (any field, `assigneeIds`, `progressManual`, `unplanned: boolean`, `cancelled: boolean`). `sp` must be 0, 0.5, 1, 2, 3, 4, 5 or null. `date/startTime/endTime` edit the single part; 409 if the task has several parts |
 | DELETE | `/api/tasks/:id` | Delete |
 | POST | `/api/backlog/reorder` | `{ids: number[]}` sets `backlog_rank` in this order |
-| POST | `/api/tasks/:id/blocks` | `{date, startTime?, endTime?}` adds a calendar part |
-| PATCH | `/api/blocks/:id` | `{date?, startTime?, endTime?, status?}` (`planned`/`done`/`missed`) |
+| POST | `/api/tasks/:id/blocks` | `{date, endDate?, startTime?, endTime?}` adds a calendar part (`endDate`: multi-day, no times) |
+| PATCH | `/api/blocks/:id` | `{date?, endDate?, startTime?, endTime?, status?}` (`planned`/`done`/`missed`). Moving keeps a multi-day length |
 | DELETE | `/api/blocks/:id` | Removes a part |
 | POST | `/api/tasks/:id/checklist` | `{text}` |
 | PATCH/DELETE | `/api/checklist/:id` | `{text?, done?}` |
@@ -81,6 +81,7 @@ All `/api/*` routes need a session cookie, except `/api/health`. Write calls (`P
 | POST | `/api/planning/finish` | Closes the active sprint, activates the planned one |
 | GET | `/api/retro/:sprintId` | Items |
 | POST | `/api/retro/:sprintId` | `{kind, text}` |
+| PATCH | `/api/retro/items/:id` | `{taskId}`: links an action to the task made from it |
 | DELETE | `/api/retro/items/:id` | |
 
 ## Calendar
@@ -88,7 +89,7 @@ All `/api/*` routes need a session cookie, except `/api/health`. Write calls (`P
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/calendar-events?from=&to=` | Events in range (max 62 days). Creates missing occurrences of event rules first |
-| POST | `/api/calendar-events` | `{title, kind, date, startTime?, endTime?, note?, attendeeIds, repeat?: {freq, weekdaysMask}}`. With `repeat` it creates a rule; returns the created events |
+| POST | `/api/calendar-events` | `{title, kind, date, endDate?, startTime?, endTime?, note?, attendeeIds, repeat?: {freq, weekdaysMask}}` (`endDate` only for one-off events; max 32 days). With `repeat` it creates a rule; returns the created events |
 | PATCH | `/api/calendar-events/:id` | Any field, `status` (`planned`/`done`/`missed`) |
 | DELETE | `/api/calendar-events/:id` | One-off: deletes. Occurrence of a series: marks it `missed` (so the rule does not create it again) |
 | GET | `/api/event-rules` | Active series |

@@ -2,7 +2,7 @@
 // Each value appears once. See openwiki/requirements.md (Task dialog).
 import type { Comment, MarkStatus, Task, TaskDetail, TaskStatus } from "@shared/types.ts";
 import { tr } from "date-fns/locale";
-import { ArrowRightLeft, CalendarClock, CalendarDays, Check, CheckCheck, Flag, MoreHorizontal, Plus, Repeat, Send, Trash2, Undo2, X, Zap } from "lucide-react";
+import { ArrowRightLeft, Ban, CalendarClock, CalendarDays, Check, CheckCheck, Flag, MoreHorizontal, Plus, Repeat, Send, Trash2, Undo2, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,7 @@ import { RuleForm, type RuleDraft } from "./recurring/RecurringPage";
 import { TaskHistory } from "./TaskHistory";
 import { PartsSection, ProgressControl } from "./TaskParts";
 
-type Patch = Partial<Task> & { assigneeIds?: number[]; unplanned?: boolean };
+export type Patch = Partial<Task> & { assigneeIds?: number[]; unplanned?: boolean; cancelled?: boolean };
 
 const STATUS_DOT: Record<TaskStatus, string> = { todo: "bg-muted-foreground/50", in_progress: "bg-blue-500", done: "bg-emerald-500" };
 const PRIORITY_COLOR = ["", "text-muted-foreground", "text-amber-500", "text-red-500"];
@@ -72,10 +72,10 @@ function ValueButton({ children, className, disabled, look = "pill", ...rest }: 
   );
 }
 
-const Muted = ({ children }: { children: ReactNode }) => <span className="text-muted-foreground">{children}</span>;
+export const Muted = ({ children }: { children: ReactNode }) => <span className="text-muted-foreground">{children}</span>;
 
 /** A value with a list of choices in a popover. */
-function Choice<T>({
+export function Choice<T>({
   display,
   options,
   value,
@@ -123,7 +123,7 @@ function Choice<T>({
 }
 
 /** A value whose editor is free content inside a popover. */
-function PopoverValue({
+export function PopoverValue({
   display,
   children,
   width = "w-72",
@@ -206,67 +206,22 @@ function toRuleDraft(t: Task): RuleDraft {
     defaultSp: t.sp,
     active: true,
     assigneeIds: t.assigneeIds,
+    timesPerWeek: null,
   };
 }
 
-export function TaskView({ id, blockId, onClose }: { id: number; blockId?: number; onClose: () => void }) {
-  const { state, patchTask, deleteTask } = useStore();
-  const ask = useConfirm();
-  const task = state.tasks[id];
-  const [detail, setDetail] = useState<TaskDetail | null>(null);
-  const [editTitle, setEditTitle] = useState(false);
-  const [editDesc, setEditDesc] = useState(false);
-  const [showChecklist, setShowChecklist] = useState(false);
-  const [newItem, setNewItem] = useState("");
-  const [comment, setComment] = useState("");
-  const [convert, setConvert] = useState(false);
+export type FieldTask = Pick<Task, "assigneeIds" | "status" | "sp" | "categoryId" | "priority" | "dueDate">;
+export type StoreState = ReturnType<typeof useStore>["state"];
 
-  const load = useCallback(() => {
-    void api.get<TaskDetail>(`/api/tasks/${id}`).then(setDetail).catch(() => {});
-  }, [id]);
-  useEffect(load, [load, task?.updatedAt]);
-
-  const t: Task | undefined = task ?? detail ?? undefined;
-  if (!t) return <div className="p-6 text-sm text-muted-foreground">Yükleniyor…</div>;
-
-  const update = (patch: Patch) => void patchTask(id, patch).then(load);
+/**
+ * Property editors shared by the task view and the new-task form. Each renders as a badge ("pill")
+ * or plain text ("inline"); a click opens a small picker, and `update` gets the change.
+ */
+export function taskFields(t: FieldTask, update: (patch: Patch) => void, state: StoreState) {
   const users = state.users;
   const owners = t.assigneeIds.map((uid) => users.find((u) => u.id === uid)).filter((u) => !!u);
   const category = state.categories.find((c) => c.id === t.categoryId);
-  const rule = t.recurringRuleId ? state.rules.find((r) => r.id === t.recurringRuleId) : null;
-  const inActive = t.sprintId !== null && t.sprintId === state.activeSprint?.id;
-  const block = blockId ? t.blocks.find((b) => b.id === blockId) : undefined;
   const overdue = t.dueDate && t.status !== "done" && t.dueDate < state.today;
-  const sprintName = (sid: number | null) =>
-    sid === null
-      ? "Backlog"
-      : sid === state.activeSprint?.id
-        ? `Sprint ${state.activeSprint.number}`
-        : sid === state.plannedSprint?.id
-          ? `Sprint ${state.plannedSprint.number} (planlanan)`
-          : "Eski sprint";
-
-  const mark = (status: MarkStatus) => block && void api.patch(`/api/blocks/${block.id}`, { status });
-  const addItem = async (e: { preventDefault(): void }) => {
-    e.preventDefault();
-    if (!newItem.trim()) return;
-    await api.post(`/api/tasks/${id}/checklist`, { text: newItem });
-    setNewItem("");
-    load();
-  };
-  const addComment = async (e: { preventDefault(): void }) => {
-    e.preventDefault();
-    if (!comment.trim()) return;
-    await api.post<Comment>(`/api/tasks/${id}/comments`, { body: comment });
-    setComment("");
-    load();
-  };
-  const remove = async () => {
-    if (!(await ask({ title: "Görev silinsin mi?", description: "Takvim parçaları, kontrol listesi ve yorumlar da silinir." }))) return;
-    await deleteTask(id);
-    onClose();
-  };
-
   const ownerOptions = [
     ...users.map((u) => ({ key: String(u.id), value: [u.id], label: (<><UserAvatar user={u} className="size-5" /> {u.name}</>) })),
     {
@@ -285,8 +240,7 @@ export function TaskView({ id, blockId, onClose }: { id: number; blockId?: numbe
     },
   ];
 
-  // Property editors. Each one renders as a badge ("pill") or as plain text ("inline").
-  const f = {
+  return {
     owner: (look: Look) => (
       <Choice
         look={look}
@@ -406,6 +360,67 @@ export function TaskView({ id, blockId, onClose }: { id: number; blockId?: numbe
         )}
       </PopoverValue>
     ),
+  };
+}
+
+export function TaskView({ id, blockId, onClose }: { id: number; blockId?: number; onClose: () => void }) {
+  const { state, patchTask, deleteTask } = useStore();
+  const ask = useConfirm();
+  const task = state.tasks[id];
+  const [detail, setDetail] = useState<TaskDetail | null>(null);
+  const [editTitle, setEditTitle] = useState(false);
+  const [editDesc, setEditDesc] = useState(false);
+  const [showChecklist, setShowChecklist] = useState(false);
+  const [newItem, setNewItem] = useState("");
+  const [comment, setComment] = useState("");
+  const [convert, setConvert] = useState(false);
+
+  const load = useCallback(() => {
+    void api.get<TaskDetail>(`/api/tasks/${id}`).then(setDetail).catch(() => {});
+  }, [id]);
+  useEffect(load, [load, task?.updatedAt]);
+
+  const t: Task | undefined = task ?? detail ?? undefined;
+  if (!t) return <div className="p-6 text-sm text-muted-foreground">Yükleniyor…</div>;
+
+  const update = (patch: Patch) => void patchTask(id, patch).then(load);
+  const users = state.users;
+  const rule = t.recurringRuleId ? state.rules.find((r) => r.id === t.recurringRuleId) : null;
+  const inActive = t.sprintId !== null && t.sprintId === state.activeSprint?.id;
+  const block = blockId ? t.blocks.find((b) => b.id === blockId) : undefined;
+  const sprintName = (sid: number | null) =>
+    sid === null
+      ? "Backlog"
+      : sid === state.activeSprint?.id
+        ? `Sprint ${state.activeSprint.number}`
+        : sid === state.plannedSprint?.id
+          ? `Sprint ${state.plannedSprint.number} (planlanan)`
+          : "Eski sprint";
+
+  const mark = (status: MarkStatus) => block && void api.patch(`/api/blocks/${block.id}`, { status });
+  const addItem = async (e: { preventDefault(): void }) => {
+    e.preventDefault();
+    if (!newItem.trim()) return;
+    await api.post(`/api/tasks/${id}/checklist`, { text: newItem });
+    setNewItem("");
+    load();
+  };
+  const addComment = async (e: { preventDefault(): void }) => {
+    e.preventDefault();
+    if (!comment.trim()) return;
+    await api.post<Comment>(`/api/tasks/${id}/comments`, { body: comment });
+    setComment("");
+    load();
+  };
+  const remove = async () => {
+    if (!(await ask({ title: "Görev silinsin mi?", description: "Takvim parçaları, kontrol listesi ve yorumlar da silinir." }))) return;
+    await deleteTask(id);
+    onClose();
+  };
+
+  // Property editors. Each one renders as a badge ("pill") or as plain text ("inline").
+  const f = {
+    ...taskFields(t, update, state),
     calendar: (look: Look) => (
       <PopoverValue
         look={look}
@@ -420,7 +435,9 @@ export function TaskView({ id, blockId, onClose }: { id: number; blockId?: numbe
               <>
                 {t.blocks[0].status === "done" && <Check className="size-3.5" />}
                 {t.blocks[0].status === "missed" && <X className="size-3.5" />}
-                {`${shortDate(t.blocks[0].date)} ${timeLabel(t.blocks[0])}`}
+                {t.blocks[0].endDate
+                  ? `${shortDate(t.blocks[0].date)} – ${shortDate(t.blocks[0].endDate)}`
+                  : `${shortDate(t.blocks[0].date)} ${timeLabel(t.blocks[0])}`}
               </>
             ) : (
               <>
@@ -467,7 +484,7 @@ export function TaskView({ id, blockId, onClose }: { id: number; blockId?: numbe
           <button
             type="button"
             onClick={() => setEditTitle(true)}
-            className={cn("-mx-2 rounded-md px-2 py-1 text-left text-lg leading-snug font-semibold hover:bg-accent", t.status === "done" && "line-through opacity-70")}
+            className={cn("-mx-2 rounded-md px-2 py-1 text-left text-lg leading-snug font-semibold hover:bg-accent", (t.status === "done" || t.cancelledAt) && "line-through opacity-70")}
           >
             {t.title}
           </button>
@@ -480,8 +497,13 @@ export function TaskView({ id, blockId, onClose }: { id: number; blockId?: numbe
           <span className="px-0.5">·</span>
           {f.sp("inline")}
         </div>
-        {(t.unplannedAt || rule || (t.carriedFromSprintId && !t.recurringRuleId) || !inActive) && (
+        {(t.unplannedAt || rule || (t.carriedFromSprintId && !t.recurringRuleId) || !inActive || t.cancelledAt) && (
           <div className="flex flex-wrap gap-1.5 pt-1">
+            {t.cancelledAt && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                <Ban className="size-3" /> İptal edildi · sayılmaz, devretmez
+              </span>
+            )}
             {!inActive && (
               <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{sprintName(t.sprintId)}</span>
             )}
@@ -531,6 +553,11 @@ export function TaskView({ id, blockId, onClose }: { id: number; blockId?: numbe
                   ))}
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+          )}
+          {t.sprintId !== null && t.status !== "done" && (
+            <DropdownMenuItem onSelect={() => update({ cancelled: !t.cancelledAt })}>
+              <Ban /> {t.cancelledAt ? "İptali geri al" : "Görevi iptal et"}
+            </DropdownMenuItem>
           )}
           {!t.recurringRuleId && (
             <DropdownMenuItem onSelect={() => setConvert(true)}>

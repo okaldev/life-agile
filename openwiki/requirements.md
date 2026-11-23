@@ -29,12 +29,17 @@
 - Recurring tasks: see [recurring.md](recurring.md). A normal task can be converted to a recurring rule ("Tekrarlayana çevir").
 - A task can be split into several calendar parts. Each part is marked done or missed. Task progress (0–100) comes from parts, checklist or a manual value. See [calendar.md](calendar.md).
 - A missed recurring occurrence leaves the board but stays in the calendar and metrics.
+- Cancel ("Görevi iptal et", ⋯ menu, sprint tasks that are not done): the task is not needed any more. `cancelled_at` is set. It does not count anywhere (SP, stats, burndown), is never carried or sent to the backlog, and leaves grooming, estimation, the calendar and the backlog. On the board it sits muted at the end of the done column with an "İptal" tag. "İptali geri al" or a status change brings it back. A done task cannot be cancelled.
+- A task in the planned sprint that becomes done before that sprint starts moves to the active sprint (it is work of the running week) and so leaves grooming (`settleDoneTask`).
+- Multi-day: a calendar part (and an event) can have an inclusive end date (max 32 days). It has no times and is drawn as one bar across its days. Moving it keeps its length; giving it a time makes it a one-day part again.
+- New task form: the same layout as the task view: title, then "owner · status · SP" as plain text, then badges (category, priority, due date, day/time or several days, sprint) with the same pickers, and a description.
 
 ## Events
 
 - General events outside sprints: buluşma, misafir, dışarıda, meşgul, diğer. One or both people. Optional time. Optional repeat.
 - Events are information only: no SP, no metrics. The estimation step shows event hours per person and the target suggestion subtracts them (8 h = 1 day).
 - An event can be marked Gerçekleşti / Gerçekleşmedi.
+- A one-off event without time can last several days (end date); it shows as one bar across the days.
 
 ## Task dialog
 
@@ -61,8 +66,8 @@ Read-first view (`web/src/components/app/TaskView.tsx`). Values are shown as tex
 
 ## Views
 
-- Board: three columns, one-row sprint header with SP done and target per person. On desktop the board fits the screen and each column scrolls on its own (column header stays visible). Future recurring occurrences are hidden unless "Gelecek tekrarlar" is on.
-- Calendar (start page `/`): day or week view, 24 hours. Default by screen width: below 1024 px day view, wider week view; a "Gün / Hafta" toggle switches it for the visit. Arrows move one day or one week; "Bugün" / "Bu sprint" jump back. Week view shows the sprint week, (00:00–24:00), opens at 07:00. Shows task parts and general events. "All day" row for items without time. Desktop: drag on the grid to open the slot chooser (new task / part of an existing task / event), drag an item to move it, drag its bottom edge to resize, drag a sprint task from the side list to add a part. Mobile: one day; tap a slot or an item. Past planned items without a mark get an amber dashed border and an "İşaretlenmemiş (N)" list. See [calendar.md](calendar.md).
+- Board: three columns, one-row sprint header with SP done and target per person. On desktop the board fits the screen and each column scrolls on its own (column header stays visible). Recurring occurrences: per rule, the open ones up to today; when none is today, the next open one (e.g. Tuesday's class on Monday). Undated "N times a week" occurrences always show. "Gelecek tekrarlar" shows all of them. Cancelled tasks sit muted at the end of the done column.
+- Calendar (start page `/`): day or week view, 24 hours. Default by screen width: below 1024 px day view, wider week view; a "Gün / Hafta" toggle switches it for the visit. Arrows move one day or one week; "Bugün" / "Bu sprint" jump back. Week view shows the sprint week, (00:00–24:00), opens at 07:00. Shows task parts, general events and public holidays (`HOLIDAYS`, default Turkey; holiday name in the all-day row, red day number on mobile). "All day" row for items without time; multi-day items as bars across the days below it. Desktop: drag on the grid to open the slot chooser (new task / part of an existing task / event), drag an item to move it, drag its bottom edge to resize, drag a sprint task from the side list to add a part. Mobile: one day; tap a slot or an item. Past planned items without a mark get an amber dashed border and an "İşaretlenmemiş (N)" list. See [calendar.md](calendar.md).
 - Backlog: tasks without a sprint. Two sort modes: "Akıllı" (priority, due date, then manual rank) and "Manuel" (drag).
 - Person filter on board, calendar and backlog: one tab per person, Ortak (shared only), Tümü.
 - Dashboard: past sprints and metrics. See [metrics.md](metrics.md).
@@ -78,6 +83,8 @@ Read-first view (`web/src/components/app/TaskView.tsx`). Values are shown as tex
 ## Capacity
 
 - A user can mark leave days (full or half day). The estimation step shows a target suggestion from available days.
+- Public holidays count as leave days (arife: half day) in the capacity and the suggestion.
+- The estimation step shows past done SP: together (average of all closed sprints, last 3, best) and per person (average, last 3, best).
 
 ## Notifications
 

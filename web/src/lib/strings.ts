@@ -19,7 +19,7 @@ export const STEP_LABEL: Record<PlanningStep, string> = {
 export const RETRO_LABEL: Record<RetroKind, string> = {
   good: "İyi giden",
   bad: "Kötü giden",
-  try: "Deneyeceğiz",
+  try: "Aksiyonlar",
 };
 
 export const PAGE_LABEL: Record<string, string> = {

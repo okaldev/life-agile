@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { fmt, shortDate } from "@/lib/dates";
+import { useHolidays } from "@/lib/holidays";
 import { useStore } from "@/lib/store";
 import { sumSp, UserAvatar, fmtSp } from "../common";
 import { useAvailability, availableDays } from "./EstimationStep";
@@ -11,8 +12,9 @@ export function StartStep() {
   const { state } = useStore();
   const planned = state.plannedSprint!;
   const [busy, setBusy] = useState(false);
-  const tasks = Object.values(state.tasks).filter((t) => t.sprintId === planned.id);
+  const tasks = Object.values(state.tasks).filter((t) => t.sprintId === planned.id && !t.cancelledAt);
   const avail = useAvailability(planned.startDate, planned.endDate);
+  const holidays = useHolidays(planned.startDate, planned.endDate);
   const missing = tasks.filter((t) => t.sp == null).length;
 
   // The sprint week has not begun yet: it can also start by itself at 00:00 of its first day.
@@ -45,7 +47,7 @@ export function StartStep() {
               <div key={u.id} className="flex items-center gap-2 p-2.5 text-sm">
                 <UserAvatar user={u} className="size-5" />
                 <span className="font-medium">{u.name}</span>
-                <span className="text-xs text-muted-foreground">{availableDays(avail, u.id)} gün</span>
+                <span className="text-xs text-muted-foreground">{availableDays(avail, u.id, holidays)} gün</span>
                 <span className="ml-auto tabular-nums">
                   {fmtSp(sp)} SP planlandı · hedef {target}
                 </span>

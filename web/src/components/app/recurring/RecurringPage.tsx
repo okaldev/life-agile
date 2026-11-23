@@ -21,7 +21,8 @@ type Draft = RuleDraft;
 
 const FREQ_LABEL: Record<RecurringFreq, string> = { daily: "Her gün", weekdays: "Hafta içi", weekly: "Seçili günler" };
 
-export function describeRule(r: Pick<RecurringRule, "freq" | "weekdaysMask" | "startTime" | "endTime">): string {
+export function describeRule(r: Pick<RecurringRule, "freq" | "weekdaysMask" | "startTime" | "endTime" | "timesPerWeek">): string {
+  if (r.timesPerWeek) return `Haftada ${r.timesPerWeek} kez · gün serbest`;
   const days =
     r.freq === "weekly" ? WEEKDAY_SHORT.filter((_, i) => r.weekdaysMask & (1 << i)).join(", ") || "gün yok" : FREQ_LABEL[r.freq];
   const time = r.startTime ? ` · ${r.startTime}${r.endTime ? `–${r.endTime}` : ""}` : "";
@@ -45,7 +46,8 @@ export function RuleForm({
   const { state } = useStore();
   const [d, setD] = useState<Draft>(draft);
   const set = (p: Partial<Draft>) => setD((x) => ({ ...x, ...p }));
-  const valid = d.title.trim() && d.assigneeIds.length > 0 && (d.freq !== "weekly" || d.weekdaysMask > 0);
+  const flex = !!d.timesPerWeek;
+  const valid = d.title.trim() && d.assigneeIds.length > 0 && (flex || d.freq !== "weekly" || d.weekdaysMask > 0);
 
   const save = async (e: { preventDefault(): void }) => {
     e.preventDefault();
@@ -56,8 +58,9 @@ export function RuleForm({
       categoryId: d.categoryId,
       freq: d.freq,
       weekdaysMask: d.weekdaysMask,
-      startTime: d.startTime,
-      endTime: d.startTime ? d.endTime : null,
+      startTime: flex ? null : d.startTime,
+      endTime: !flex && d.startTime ? d.endTime : null,
+      timesPerWeek: d.timesPerWeek,
       defaultSp: d.defaultSp,
       active: d.active,
       assigneeIds: d.assigneeIds,
@@ -84,17 +87,45 @@ export function RuleForm({
               <button
                 key={f}
                 type="button"
-                onClick={() => set({ freq: f })}
+                onClick={() => set({ freq: f, timesPerWeek: null })}
                 className={cn(
                   "rounded-md border px-3 py-1.5 text-sm",
-                  d.freq === f ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent",
+                  !flex && d.freq === f ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent",
                 )}
               >
                 {FREQ_LABEL[f]}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => set({ freq: "weekly", weekdaysMask: 0, timesPerWeek: d.timesPerWeek ?? 2 })}
+              className={cn("rounded-md border px-3 py-1.5 text-sm", flex ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent")}
+            >
+              Haftada N kez
+            </button>
           </div>
-          {d.freq === "weekly" && (
+          {flex && (
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center gap-1.5">
+                {[1, 2, 3, 4, 5, 6].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => set({ timesPerWeek: n })}
+                    className={cn(
+                      "size-8 rounded-md border text-sm",
+                      d.timesPerWeek === n ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent",
+                    )}
+                  >
+                    {n}
+                  </button>
+                ))}
+                <span className="text-sm text-muted-foreground">kez / hafta</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Her sprintte bu kadar günsüz görev oluşur. Günü takvime sürükleyerek siz seçersiniz.</p>
+            </div>
+          )}
+          {!flex && d.freq === "weekly" && (
             <div className="grid grid-cols-7 gap-1 pt-1">
               {WEEKDAY_SHORT.map((w, i) => (
                 <button
@@ -112,7 +143,7 @@ export function RuleForm({
             </div>
           )}
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className={cn("grid grid-cols-2 gap-3", flex && "hidden")}>
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Başlangıç (ops.)</Label>
             <Input type="time" value={d.startTime ?? ""} onChange={(e) => set({ startTime: e.target.value || null })} />
@@ -188,6 +219,7 @@ export default function RecurringPage() {
     defaultSp: 1,
     active: true,
     assigneeIds: state.me ? [state.me.id] : [],
+    timesPerWeek: null,
   });
   const ask = useConfirm();
   const remove = async (r: RecurringRule) => {

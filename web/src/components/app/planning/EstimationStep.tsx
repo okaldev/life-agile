@@ -1,4 +1,6 @@
 import type { Availability, Sprint, SprintStats, Task } from "@shared/types.ts";
+import type { Holiday } from "@shared/holidays.ts";
+import { useHolidays } from "@/lib/holidays";
 import { ArrowRight, Repeat, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -26,9 +28,21 @@ export function useAvailability(from: string, to: string): Availability[] {
   return list;
 }
 
-/** Available days in the week: off = 0, half = 0.5, else 1. */
-export function availableDays(list: Availability[], userId: number): number {
-  return 7 - list.filter((a) => a.userId === userId).reduce((s, a) => s + (a.kind === "off" ? 1 : 0.5), 0);
+/** Available days in the week: off = 0, half = 0.5, else 1. Public holidays count as off (arife: half). */
+export function availableDays(list: Availability[], userId: number, holidays?: Map<string, Holiday[]>): number {
+  const lost = new Map<string, number>();
+  for (const a of list) if (a.userId === userId) lost.set(a.date, a.kind === "off" ? 1 : 0.5);
+  for (const [date, hs] of holidays ?? []) lost.set(date, Math.max(lost.get(date) ?? 0, hs.some((h) => !h.half) ? 1 : 0.5));
+  return 7 - [...lost.values()].reduce((s, n) => s + n, 0);
+}
+
+/** Done SP per person in closed sprints: average of the last 3, average of all, best. */
+export function pastSp(stats: SprintStats[], userId?: number): { last3: number; all: number; best: number; count: number } | null {
+  const closed = stats.filter((s) => s.sprint.status === "closed");
+  if (closed.length === 0) return null;
+  const done = closed.map((s) => (userId == null ? s.totalDoneSp : (s.perUser.find((p) => p.userId === userId)?.doneSp ?? 0)));
+  const avg = (xs: number[]) => Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10) / 10;
+  return { last3: avg(done.slice(-3)), all: avg(done), best: Math.max(...done), count: closed.length };
 }
 
 /** Event hours per user in a date range (openwiki/calendar.md, busy hours). */
@@ -123,6 +137,8 @@ function CapacityPanel({ sprint }: { sprint: Sprint }) {
   const avail = useAvailability(sprint.startDate, sprint.endDate);
   const stats = useSprintStats();
   const busy = useBusyHours(sprint.startDate, sprint.endDate);
+  const holidays = useHolidays(sprint.startDate, sprint.endDate);
+  const team = pastSp(stats);
   const cycle = (userId: number, date: string) => {
     const cur = avail.find((a) => a.userId === userId && a.date === date)?.kind;
     const next = cur === undefined ? "off" : cur === "off" ? "half" : null;
@@ -132,10 +148,17 @@ function CapacityPanel({ sprint }: { sprint: Sprint }) {
     <section className="space-y-3 rounded-lg border p-3">
       <div>
         <h3 className="font-medium">Müsaitlik ve hedef</h3>
-        <p className="text-xs text-muted-foreground">Güne dokun: izinli → yarım gün → müsait.</p>
+        <p className="text-xs text-muted-foreground">Güne dokun: izinli → yarım gün → müsait. Resmi tatiller izinli sayılır.</p>
       </div>
+      {team && (
+        <p className="rounded-md bg-muted/60 px-3 py-2 text-xs">
+          <b>Birlikte</b> sprint başına ortalama <b>{fmtSp(team.all)} SP</b> bitirdiniz ({team.count} sprint) · son 3 sprint{" "}
+          {fmtSp(team.last3)} SP · en iyi {fmtSp(team.best)} SP
+        </p>
+      )}
       {state.users.map((u) => {
-        const free = availableDays(avail, u.id);
+        const free = availableDays(avail, u.id, holidays);
+        const past = pastSp(stats, u.id);
         const suggestion = suggestTarget(stats, u.id, free, busy[u.id] ?? 0);
         const target = sprint.members.find((m) => m.userId === u.id)?.targetSp ?? 0;
         return (
@@ -162,6 +185,12 @@ function CapacityPanel({ sprint }: { sprint: Sprint }) {
                 />
                 SP
               </label>
+              {past && (
+                <span className="w-full text-xs text-muted-foreground">
+                  Geçmiş: ortalama <b className="text-foreground">{fmtSp(past.all)} SP</b> · son 3 sprint {fmtSp(past.last3)} · en iyi{" "}
+                  {fmtSp(past.best)}
+                </span>
+              )}
               {suggestion != null && suggestion !== target && (
                 <button
                   className="w-full text-left text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
@@ -174,12 +203,15 @@ function CapacityPanel({ sprint }: { sprint: Sprint }) {
             <div className="grid grid-cols-7 gap-1">
               {days.map((d, i) => {
                 const kind = avail.find((a) => a.userId === u.id && a.date === d)?.kind;
+                const hol = holidays.get(d);
                 return (
                   <button
                     key={d}
                     onClick={() => cycle(u.id, d)}
+                    title={hol?.map((h) => h.name).join(" · ")}
                     className={cn(
                       "rounded-md border py-1.5 text-xs",
+                      hol && !kind && "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300",
                       kind === "off" && "border-red-500/50 bg-red-500/10 text-red-600 line-through",
                       kind === "half" && "border-amber-500/50 bg-amber-500/10 text-amber-600",
                     )}
@@ -200,7 +232,7 @@ export function EstimationStep() {
   const { state } = useStore();
   const planned = state.plannedSprint!;
   const sprintTasks = useMemo(
-    () => Object.values(state.tasks).filter((t) => t.sprintId === planned.id),
+    () => Object.values(state.tasks).filter((t) => t.sprintId === planned.id && !t.cancelledAt),
     [state.tasks, planned.id],
   );
   const normal = sprintTasks.filter((t) => !t.recurringRuleId).sort((a, b) => a.id - b.id);

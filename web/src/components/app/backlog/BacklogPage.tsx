@@ -43,7 +43,7 @@ export default function BacklogPage() {
   const { openNew } = useTaskDialog();
   const [mode, setMode] = useSortMode();
   const [category, setCategory] = useState("all");
-  const tasks = useTasks((t) => t.sprintId === null && (category === "all" || String(t.categoryId) === category), [category]);
+  const tasks = useTasks((t) => t.sprintId === null && !t.cancelledAt && (category === "all" || String(t.categoryId) === category), [category]);
   const target = state.plannedSprint ?? state.activeSprint;
 
   const toSprint = (t: Task) =>

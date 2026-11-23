@@ -20,7 +20,7 @@ import {
 } from "../domain/events.ts";
 import { generateOccurrences, ruleHitsDay } from "../domain/recurrence.ts";
 import { addDays, today, weekdayIndex } from "../domain/time.ts";
-import { body, emit, HttpError, idParam, logActivity, shortTitle, v, type C } from "./common.ts";
+import { body, emit, HttpError, idParam, logActivity, shortTitle, spanEnd, v, type C } from "./common.ts";
 
 const KINDS: EventKind[] = ["meet", "guest", "out", "busy", "other"];
 const FREQS: RecurringFreq[] = ["daily", "weekdays", "weekly"];
@@ -61,6 +61,7 @@ export function calendarRoutes(db: DB): Hono<AppEnv> {
       note: v.str(b.note ?? "", "note", 5000),
       kind,
       date,
+      endDate: spanEnd(date, b.endDate),
       startTime: v.time(b.startTime, "startTime"),
       endTime: v.time(b.endTime, "endTime"),
       attendeeIds: attendees(db, b.attendeeIds ?? [c.get("user").id]),
@@ -103,6 +104,7 @@ export function calendarRoutes(db: DB): Hono<AppEnv> {
     }
     if ("startTime" in b) patch.startTime = v.time(b.startTime, "startTime");
     if ("endTime" in b) patch.endTime = v.time(b.endTime, "endTime");
+    if ("endDate" in b) patch.endDate = spanEnd((patch.date as string) ?? getEvent(db, id)!.date, b.endDate);
     if ("status" in b) {
       if (!["planned", "done", "missed"].includes(b.status)) throw new HttpError(400, "bad status");
       patch.status = b.status;
@@ -191,7 +193,12 @@ export function calendarRoutes(db: DB): Hono<AppEnv> {
   app.get("/calendar", (c) => {
     const { from, to } = range(c);
     return c.json(
-      listTasks(db, "EXISTS (SELECT 1 FROM task_blocks b WHERE b.task_id = t.id AND b.date BETWEEN ? AND ?) ORDER BY t.id", from, to),
+      listTasks(
+        db,
+        "EXISTS (SELECT 1 FROM task_blocks b WHERE b.task_id = t.id AND b.date <= ? AND coalesce(b.end_date, b.date) >= ?) ORDER BY t.id",
+        to,
+        from,
+      ),
     );
   });
 

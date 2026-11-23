@@ -91,3 +91,12 @@ export const v = {
 export function shortTitle(t: Pick<Task, "title">): string {
   return t.title.length > 40 ? `${t.title.slice(0, 39)}…` : t.title;
 }
+
+/** Validates the end date of a multi-day item: after the start, at most 31 days. Null for one day. */
+export function spanEnd(date: string, x: unknown): string | null {
+  const end = v.date(x ?? null, "endDate");
+  if (!end || end <= date) return null;
+  const days = (Date.parse(`${end}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) / 86_400_000;
+  if (days > 31) throw new HttpError(400, "a multi-day item can last at most 32 days");
+  return end;
+}

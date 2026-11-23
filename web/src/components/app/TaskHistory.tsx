@@ -66,6 +66,8 @@ function useDescribe() {
         return n == null ? "ilerlemeyi otomatiğe döndürdü" : `ilerlemeyi %${n} yaptı`;
       case "unplannedAt":
         return n ? "plan dışı olarak işaretledi" : "plan dışı işaretini kaldırdı";
+      case "cancelledAt":
+        return n ? "görevi iptal etti" : "görevin iptalini geri aldı";
       case "missedAt":
         return n ? "görev yapılmadı olarak işaretlendi" : "yapılmadı işareti kalktı";
       case "part.add":

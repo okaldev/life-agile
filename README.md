@@ -50,6 +50,7 @@ Everything works without configuration. To change something, copy `.env.example`
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | off | Turns on "Google ile giriş yap". Create an OAuth client in Google Cloud with the redirect URI `PUBLIC_URL/auth/google/callback`. |
 | `ALLOWED_EMAILS` | empty | Accounts to create at start (`email:Name,…`). |
 | `VAPID_*` | created in `data/` | Web Push keys. |
+| `HOLIDAYS` | `TR` | Public holidays on the calendars (`TR` or `none`). |
 
 To put it on the internet, run it behind a reverse proxy with HTTPS (Caddy, Traefik, nginx) and set `PUBLIC_URL`. See [openwiki/deploy.md](openwiki/deploy.md).
 

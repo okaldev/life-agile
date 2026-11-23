@@ -1,5 +1,5 @@
 import type { Task } from "@shared/types.ts";
-import { CalendarClock, CheckSquare, Flag, Layers, MessageSquare, Repeat, Undo2, XCircle, Zap } from "lucide-react";
+import { Ban, CalendarClock, CheckSquare, Flag, Layers, MessageSquare, Repeat, Undo2, XCircle, Zap } from "lucide-react";
 import { shortDate } from "@/lib/dates";
 import { hoverProps, markStyle, PartnerTag, usePartnerMark } from "@/lib/hover";
 import { useStore } from "@/lib/store";
@@ -29,6 +29,16 @@ export function TaskMeta({ task, showDate = true }: { task: Task; showDate?: boo
       {task.unplannedAt && (
         <span className="flex items-center gap-0.5 rounded bg-orange-500/15 px-1 font-medium text-orange-600 dark:text-orange-400" title="Sprint başladıktan sonra eklendi">
           <Zap className="size-3" /> Plan dışı
+        </span>
+      )}
+      {task.occurrenceDate?.includes("#") && (
+        <span className="rounded bg-muted px-1 tabular-nums" title="Haftada N kez: günü siz seçin">
+          {task.occurrenceDate.split("#")[1]}/{state.rules.find((r) => r.id === task.recurringRuleId)?.timesPerWeek ?? "?"}
+        </span>
+      )}
+      {task.cancelledAt && (
+        <span className="flex items-center gap-0.5 rounded bg-muted px-1 font-medium text-muted-foreground" title="Gerek kalmadı; sayılmaz, devretmez">
+          <Ban className="size-3" /> İptal
         </span>
       )}
       {task.missedAt && (
@@ -82,7 +92,7 @@ export function TaskCard({
       onKeyDown={(e) => e.key === "Enter" && onClick?.()}
       className={cn(
         "relative cursor-pointer rounded-lg border bg-card p-2 text-left shadow-xs transition-shadow select-none hover:shadow-sm",
-        task.status === "done" && "opacity-60",
+        (task.status === "done" || task.cancelledAt) && "opacity-60",
         dragging && "rotate-1 shadow-lg",
         mark && "ring-2",
         className,
@@ -92,7 +102,7 @@ export function TaskCard({
       <PartnerTag mark={mark} />
       <div className="flex items-start gap-2">
         <CategoryDot category={category} className="mt-1.5" />
-        <p className={cn("line-clamp-2 flex-1 text-sm leading-snug", task.status === "done" && "line-through")} title={task.title}>
+        <p className={cn("line-clamp-2 flex-1 text-sm leading-snug", (task.status === "done" || task.cancelledAt) && "line-through")} title={task.title}>
           {task.title}
         </p>
         <SpBadge sp={task.sp} />

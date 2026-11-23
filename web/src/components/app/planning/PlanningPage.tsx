@@ -12,6 +12,7 @@ import { EmptyState, fmtSp, sumSp } from "../common";
 import { EstimationStep } from "./EstimationStep";
 import { GroomingStep } from "./GroomingStep";
 import { RetroStep } from "./RetroStep";
+import { PlanWeek } from "./PlanWeek";
 import { StartStep } from "./StartStep";
 import { useConfirm } from "../ConfirmDialog";
 
@@ -57,7 +58,7 @@ function ScheduledPlan() {
   const { state } = useStore();
   const ask = useConfirm();
   const planned = state.plannedSprint!;
-  const tasks = Object.values(state.tasks).filter((t) => t.sprintId === planned.id);
+  const tasks = Object.values(state.tasks).filter((t) => t.sprintId === planned.id && !t.cancelledAt);
   const active = state.activeSprint;
 
   const startNow = async () => {
@@ -168,6 +169,7 @@ export default function PlanningPage() {
         </Button>
       </div>
       <Stepper current={step} hasRetro={hasRetro} />
+      {step !== "retro" && <PlanWeek sprint={planned} />}
       {step === "retro" && <RetroStep />}
       {step === "grooming" && <GroomingStep />}
       {step === "estimation" && <EstimationStep />}

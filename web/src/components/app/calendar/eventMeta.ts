@@ -34,11 +34,12 @@ export function nowMinutes(): number {
 
 /** A planned item whose time is over and nobody marked it. */
 export function isUnmarked(
-  item: { date: string; startTime: string | null; endTime: string | null; status: MarkStatus },
+  item: { date: string; endDate?: string | null; startTime: string | null; endTime: string | null; status: MarkStatus },
   today: string,
   nowMin: number,
 ): boolean {
   if (item.status !== "planned") return false;
+  if (item.endDate) return item.endDate < today; // multi-day: open to marking until its last day is over
   if (item.date < today) return true;
   if (item.date > today || !item.startTime) return false;
   const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));

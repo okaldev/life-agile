@@ -50,13 +50,13 @@ export function enterGrooming(db: DB, plannedId: number): void {
     if (active) {
       db.prepare(
         `UPDATE tasks SET sprint_id = ?, carried_from_sprint_id = ?, unplanned_at = NULL, updated_at = ?
-         WHERE sprint_id = ? AND status != 'done' AND recurring_rule_id IS NULL`,
+         WHERE sprint_id = ? AND status != 'done' AND cancelled_at IS NULL AND recurring_rule_id IS NULL`,
       ).run(plannedId, active.id, nowIso(), active.id);
       // Open recurring occurrences dated in the new week belong to the new sprint.
       // carried_from_sprint_id lets cancelPlanning move them back; they do not count as carry-over.
       db.prepare(
         `UPDATE tasks SET sprint_id = ?, carried_from_sprint_id = ?, unplanned_at = NULL, updated_at = ?
-         WHERE sprint_id = ? AND status != 'done' AND recurring_rule_id IS NOT NULL AND occurrence_date >= ?`,
+         WHERE sprint_id = ? AND status != 'done' AND cancelled_at IS NULL AND recurring_rule_id IS NOT NULL AND occurrence_date >= ?`,
       ).run(plannedId, active.id, nowIso(), active.id, planned.startDate);
     }
     generateOccurrences(db, plannedId);
@@ -131,6 +131,24 @@ export function dueScheduledSprint(db: DB, todayDate = today()): Sprint | null {
   return planned && planned.scheduledAt && !planned.planningStep && planned.startDate <= todayDate ? planned : null;
 }
 
+/**
+ * A non-recurring task of the planned sprint that is finished before that sprint starts is work of
+ * the running week: it moves to the active sprint (and so leaves the grooming lists). Returns true when moved.
+ */
+export function settleDoneTask(db: DB, taskId: number): boolean {
+  const planned = getSprintByStatus(db, "planned");
+  const active = getSprintByStatus(db, "active");
+  if (!planned || !active) return false;
+  return (
+    db
+      .prepare(
+        `UPDATE tasks SET sprint_id = ?, carried_from_sprint_id = NULL, unplanned_at = NULL
+         WHERE id = ? AND sprint_id = ? AND status = 'done' AND recurring_rule_id IS NULL`,
+      )
+      .run(active.id, taskId, planned.id).changes > 0
+  );
+}
+
 /** Closes the active sprint and activates the planned one. */
 export function finishPlanning(db: DB): Sprint {
   const planned = getSprintByStatus(db, "planned");
@@ -148,7 +166,7 @@ export function finishPlanning(db: DB): Sprint {
       if (planned.scheduledAt)
         db.prepare(
           `UPDATE tasks SET sprint_id = ?, carried_from_sprint_id = ?, unplanned_at = NULL, updated_at = ?
-           WHERE sprint_id = ? AND status != 'done' AND recurring_rule_id IS NULL`,
+           WHERE sprint_id = ? AND status != 'done' AND cancelled_at IS NULL AND recurring_rule_id IS NULL`,
         ).run(planned.id, active.id, nowIso(), active.id);
       const done = doneSpByUser(db, active.id);
       for (const m of active.members)
@@ -162,17 +180,17 @@ export function finishPlanning(db: DB): Sprint {
       db.prepare(
         `UPDATE task_blocks SET status = 'missed', updated_at = ?
          WHERE status = 'planned' AND task_id IN (
-           SELECT id FROM tasks WHERE sprint_id = ? AND recurring_rule_id IS NOT NULL AND status != 'done')`,
+           SELECT id FROM tasks WHERE sprint_id = ? AND recurring_rule_id IS NOT NULL AND status != 'done' AND cancelled_at IS NULL)`,
       ).run(now, active.id);
       db.prepare(
         `UPDATE tasks SET missed_at = ?
-         WHERE sprint_id = ? AND recurring_rule_id IS NOT NULL AND status != 'done' AND missed_at IS NULL`,
+         WHERE sprint_id = ? AND recurring_rule_id IS NOT NULL AND status != 'done' AND cancelled_at IS NULL AND missed_at IS NULL`,
       ).run(now, active.id);
       // Tasks created after grooming and still open go back to the backlog.
       db.prepare(
         `UPDATE tasks SET sprint_id = NULL,
            backlog_rank = (SELECT coalesce(max(backlog_rank), 0) + 1 FROM tasks WHERE sprint_id IS NULL), updated_at = ?
-         WHERE sprint_id = ? AND status != 'done' AND recurring_rule_id IS NULL`,
+         WHERE sprint_id = ? AND status != 'done' AND cancelled_at IS NULL AND recurring_rule_id IS NULL`,
       ).run(nowIso(), active.id);
       db.prepare("UPDATE sprints SET status = 'closed', closed_at = ? WHERE id = ?").run(nowIso(), active.id);
     }
@@ -200,7 +218,9 @@ export function setRecurringSp(db: DB, sprintId: number, ruleId: number, sp: num
 
 export function sprintStats(db: DB, sprint: Sprint): SprintStats {
   const tasks = db
-    .prepare("SELECT id, points AS sp, status, carried_from_sprint_id, recurring_rule_id, unplanned_at FROM tasks WHERE sprint_id = ?")
+    .prepare(
+      "SELECT id, points AS sp, status, carried_from_sprint_id, recurring_rule_id, unplanned_at FROM tasks WHERE sprint_id = ? AND cancelled_at IS NULL",
+    )
     .all(sprint.id) as {
     id: number;
     sp: number | null;
@@ -215,7 +235,7 @@ export function sprintStats(db: DB, sprint: Sprint): SprintStats {
          sum(coalesce(t.points, 0)) AS planned,
          sum(CASE WHEN t.status = 'done' THEN coalesce(t.points, 0) ELSE 0 END) AS done
        FROM tasks t JOIN task_assignees a ON a.task_id = t.id
-       WHERE t.sprint_id = ? GROUP BY a.user_id`,
+       WHERE t.sprint_id = ? AND t.cancelled_at IS NULL GROUP BY a.user_id`,
     )
     .all(sprint.id) as { user_id: number; planned: number; done: number }[];
   const perMap = new Map(per.map((p) => [p.user_id, p]));

@@ -91,7 +91,7 @@ export async function tick(db: DB, dbPath: string, now: LocalNow = localNow()): 
     const blocks = db
       .prepare(
         `SELECT b.id, b.start_time, t.id AS task_id, t.title, t.points AS sp FROM task_blocks b JOIN tasks t ON t.id = b.task_id
-         WHERE b.date = ? AND b.status = 'planned' AND t.status != 'done'
+         WHERE b.date = ? AND b.status = 'planned' AND t.status != 'done' AND t.cancelled_at IS NULL
            AND EXISTS (SELECT 1 FROM task_assignees a WHERE a.task_id = t.id AND a.user_id = ?)
          ORDER BY coalesce(b.start_time, '')`,
       )

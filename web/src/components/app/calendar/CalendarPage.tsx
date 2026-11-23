@@ -11,6 +11,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { api } from "@/lib/api";
 import { addDays, fmt, longDate, minutesToTime, timeToMinutes, weekDates, weekdayIndex, weekStart } from "@/lib/dates";
 import { isActiveWork, matchesView, useStore, type ViewFilter } from "@/lib/store";
+import { useHolidays } from "@/lib/holidays";
 import { WEEKDAY_SHORT } from "@/lib/strings";
 import { cn } from "@/lib/utils";
 import { CategoryDot, SpBadge, UserAvatar, ViewTabs } from "../common";
@@ -29,8 +30,8 @@ const GRID_H = (END_H - START_H) * HOUR_PX;
 const DAY_END = 24 * 60 - 1;
 
 type Item =
-  | { key: string; kind: "block"; date: string; startTime: string | null; endTime: string | null; status: TaskBlock["status"]; block: TaskBlock; task: Task }
-  | { key: string; kind: "event"; date: string; startTime: string | null; endTime: string | null; status: CalendarEvent["status"]; event: CalendarEvent };
+  | { key: string; kind: "block"; date: string; endDate: string | null; startTime: string | null; endTime: string | null; status: TaskBlock["status"]; block: TaskBlock; task: Task }
+  | { key: string; kind: "event"; date: string; endDate: string | null; startTime: string | null; endTime: string | null; status: CalendarEvent["status"]; event: CalendarEvent };
 
 type Drag =
   | { kind: "create"; day: number; from: number; to: number }
@@ -211,6 +212,47 @@ function ItemBox({
   );
 }
 
+/** A multi-day task part or event as one bar across its days. */
+function SpanBar({ item, style, cutStart, cutEnd, onClick }: { item: Item; style: React.CSSProperties; cutStart: boolean; cutEnd: boolean; onClick: () => void }) {
+  const { state } = useStore();
+  const isEvent = item.kind === "event";
+  const meta = isEvent ? kindMeta(item.event.kind) : null;
+  const category = !isEvent ? state.categories.find((c) => c.id === item.task.categoryId) : null;
+  const color = meta?.color ?? category?.color ?? "#64748b";
+  const title = isEvent ? item.event.title : item.task.title;
+  const Icon = meta?.icon;
+  const ids = isEvent ? item.event.attendeeIds : item.task.assigneeIds;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={`${title} · ${fmt(item.date, "d MMM")} – ${fmt(item.endDate!, "d MMM")}`}
+      className={cn(
+        "relative flex h-5 min-w-0 items-center gap-1 overflow-hidden px-1.5 text-left text-[11px] font-medium",
+        cutStart ? "rounded-l-none" : "rounded-l-md",
+        cutEnd ? "rounded-r-none" : "rounded-r-md",
+        item.status === "done" && "opacity-55",
+        item.status === "missed" && "text-red-600 line-through opacity-60 dark:text-red-400",
+      )}
+      style={{ ...style, ...(isEvent ? { ...hatch(color), backgroundColor: "var(--background)" } : { backgroundColor: `color-mix(in oklab, ${color} 22%, var(--background))` }) }}
+    >
+      {item.status === "done" && <Check className="size-3 shrink-0 text-emerald-600" />}
+      {Icon && <Icon className="size-3 shrink-0" />}
+      {!isEvent && category && <CategoryDot category={category} className="size-1.5" />}
+      <span className="truncate">{title}</span>
+      <span className="shrink-0 font-normal text-muted-foreground">
+        {fmt(item.date, "d")}–{fmt(item.endDate!, "d MMM")}
+      </span>
+      <span className="ml-auto flex shrink-0 -space-x-1">
+        {ids.map((id) => {
+          const u = state.users.find((x) => x.id === id);
+          return u ? <span key={id} className="size-2 rounded-full ring-1 ring-background" style={{ background: u.color }} /> : null;
+        })}
+      </span>
+    </button>
+  );
+}
+
 export default function CalendarPage() {
   const { state, dispatch } = useStore();
   const { openTask, openNew } = useTaskDialog();
@@ -238,6 +280,7 @@ export default function CalendarPage() {
     return () => ro.disconnect();
   }, []);
   const dates = weekDates(week);
+  const holidays = useHolidays(dates[0], dates[6]);
   const shownDays = dayView ? [day] : [0, 1, 2, 3, 4, 5, 6];
   // "Sprint görevleri" side panel: default open on wide screens; the choice is remembered on this device.
   const [sidePanel, setSidePanel] = useState(() => {
@@ -299,15 +342,15 @@ export default function CalendarPage() {
   const items = useMemo<Item[]>(() => {
     const out: Item[] = [];
     for (const t of tasksById.values()) {
-      if (!matchesView(t, state.view)) continue;
+      if (!matchesView(t, state.view) || t.cancelledAt) continue;
       for (const b of t.blocks) {
-        if (b.date < dates[0] || b.date > dates[6]) continue;
-        out.push({ key: `b${b.id}`, kind: "block", date: b.date, startTime: b.startTime, endTime: b.endTime, status: b.status, block: b, task: t });
+        if (b.date > dates[6] || (b.endDate ?? b.date) < dates[0]) continue;
+        out.push({ key: `b${b.id}`, kind: "block", date: b.date, endDate: b.endDate, startTime: b.startTime, endTime: b.endTime, status: b.status, block: b, task: t });
       }
     }
     for (const e of events) {
       if (!eventMatchesView(e, state.view)) continue;
-      out.push({ key: `e${e.id}`, kind: "event", date: e.date, startTime: e.startTime, endTime: e.endTime, status: e.status, event: e });
+      out.push({ key: `e${e.id}`, kind: "event", date: e.date, endDate: e.endDate, startTime: e.startTime, endTime: e.endTime, status: e.status, event: e });
     }
     return out;
   }, [tasksById, events, state.view, week]);
@@ -325,7 +368,10 @@ export default function CalendarPage() {
       (t) =>
         (weekSprint === state.activeSprint?.id ? isActiveWork(t, state) : t.sprintId !== null && t.sprintId === weekSprint) &&
         t.status !== "done" &&
-        !t.recurringRuleId &&
+        !t.cancelledAt &&
+        !t.missedAt &&
+        // Recurring occurrences have their day, except "N times a week" ones: the user picks it here.
+        (!t.recurringRuleId || t.blocks.length === 0) &&
         matchesView(t, state.view),
     )
     .sort(compareTasks);
@@ -431,8 +477,14 @@ export default function CalendarPage() {
   const weekLabel = `${fmt(dates[0], "d MMM")} – ${fmt(dates[6], "d MMM yyyy")}`;
   const closePanel = () => setPanel(null);
 
+  const holidayOf = (d: string) => holidays.get(d);
+  // Multi-day items: one bar across their days (week view) or on each day (day view).
+  const spans = items
+    .filter((i) => i.endDate)
+    .filter((i) => shownDays.some((k) => dates[k] >= i.date && dates[k] <= i.endDate!))
+    .sort((a, b) => a.date.localeCompare(b.date) || b.endDate!.localeCompare(a.endDate!));
   const allDay = (d: string) =>
-    items.filter((i) => i.date === d && !i.startTime).sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "event" ? -1 : 1));
+    items.filter((i) => i.date === d && !i.startTime && !i.endDate).sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "event" ? -1 : 1));
   const timed = (d: string) => items.filter((i) => i.date === d && i.startTime && !isBackground(i));
   const backgrounds = (d: string) => items.filter((i) => i.date === d && i.startTime && isBackground(i));
 
@@ -512,7 +564,7 @@ export default function CalendarPage() {
               )}
             >
               {WEEKDAY_SHORT[i]}
-              <span className="text-sm font-medium">{fmt(d, "d")}</span>
+              <span className={cn("text-sm font-medium", holidayOf(d) && i !== day && "text-rose-600 dark:text-rose-400")}>{fmt(d, "d")}</span>
             </button>
           ))}
         </div>
@@ -521,7 +573,7 @@ export default function CalendarPage() {
       <div className="flex min-h-0 flex-1 gap-3">
         <div ref={scrollRef} className="thin-scroll min-w-0 flex-1 overflow-y-auto overscroll-contain rounded-lg border">
           {/* Day headers + all-day row. The stable gutter keeps columns aligned with the scrolling grid. */}
-          <div ref={headerRef} className="sticky top-0 z-30 flex border-b bg-background/95 backdrop-blur">
+          <div ref={headerRef} className={cn("sticky top-0 z-30 flex border-b bg-background/95 backdrop-blur", spans.length > 0 && "mb-[var(--spans-h)]")} style={{ ["--spans-h" as string]: `${spans.length * 24 + 8}px` }}>
             <div className="w-11 shrink-0 border-r text-[10px] text-muted-foreground" />
             {shownDays.map((i) => (
               <div key={i} className="min-w-0 flex-1 border-r last:border-r-0" style={{ width: colWidth }}>
@@ -537,6 +589,16 @@ export default function CalendarPage() {
                   onDrop={(e) => onDrop(e, dates[i])}
                   onDoubleClick={(e) => e.target === e.currentTarget && setPanel({ type: "slot", slot: { date: dates[i], startTime: null, endTime: null } })}
                 >
+                  {holidayOf(dates[i])?.map((h) => (
+                    <div
+                      key={h.name}
+                      title={h.half ? `${h.name} (13:00'dan sonra tatil)` : h.name}
+                      className="truncate rounded bg-rose-500/10 px-1.5 py-0.5 text-[11px] text-rose-700 dark:text-rose-300"
+                    >
+                      {h.half ? "½ " : ""}
+                      {h.name}
+                    </div>
+                  ))}
                   {allDay(dates[i]).map((it) => (
                     <ItemBox key={it.key} item={it} compact unmarked={unmarkedKeys.has(it.key)} onClick={() => openItem(it)} />
                   ))}
@@ -548,6 +610,27 @@ export default function CalendarPage() {
                 </div>
               </div>
             ))}
+            {spans.length > 0 && (
+              <div className="absolute inset-x-0 top-full flex border-b bg-background/95 backdrop-blur">
+                <div className="w-11 shrink-0 border-r" />
+                <div className="grid flex-1 gap-y-1 px-0.5 py-1" style={{ gridTemplateColumns: `repeat(${shownDays.length}, minmax(0, 1fr))` }}>
+                  {spans.map((it) => {
+                    const from = shownDays.findIndex((k) => dates[k] >= it.date);
+                    const lastIdx = shownDays.reduce((acc, k, idx) => (dates[k] <= it.endDate! ? idx : acc), from);
+                    return (
+                      <SpanBar
+                        key={it.key}
+                        item={it}
+                        cutStart={it.date < dates[shownDays[0]]}
+                        cutEnd={it.endDate! > dates[shownDays[shownDays.length - 1]]}
+                        style={{ gridColumn: `${Math.max(0, from) + 1} / ${lastIdx + 2}` }}
+                        onClick={() => openItem(it)}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Hour grid */}

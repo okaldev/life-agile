@@ -7,8 +7,9 @@ import { nowIso, tx } from "../db/db.ts";
 import { getTask, getTaskDetail, listTasks, mapChecklist, mapComment, setAssignees } from "../db/repo.ts";
 import { addBlock, deleteBlock, followTaskStatus, getBlock, setBlockStatus, updateBlockTime } from "../domain/blocks.ts";
 import { diffTask, listHistory, recordHistory } from "../domain/history.ts";
+import { settleDoneTask } from "../domain/sprint.ts";
 import { hooks } from "../hooks.ts";
-import { body, emit, HttpError, idParam, logActivity, shortTitle, v } from "./common.ts";
+import { body, emit, HttpError, idParam, logActivity, shortTitle, spanEnd, v } from "./common.ts";
 
 /** New tasks start with "Düşük" (low) priority. */
 export const DEFAULT_PRIORITY = 1;
@@ -55,6 +56,7 @@ function columnsFrom(b: Record<string, any>): Record<string, unknown> {
   if ("startTime" in b) cols.start_time = v.time(b.startTime, "startTime");
   if ("endTime" in b) cols.end_time = v.time(b.endTime, "endTime");
   if ("unplanned" in b) cols.unplanned_at = b.unplanned ? nowIso() : null;
+  if ("cancelled" in b) cols.cancelled_at = b.cancelled ? nowIso() : null;
   if ("progressManual" in b) cols.progress_manual = v.int(b.progressManual, "progressManual", 0, 100);
   if ("backlogRank" in b) {
     if (typeof b.backlogRank !== "number") throw new HttpError(400, "bad backlogRank");
@@ -63,7 +65,7 @@ function columnsFrom(b: Record<string, any>): Record<string, unknown> {
   return cols;
 }
 
-type Schedule = { date?: string | null; startTime?: string | null; endTime?: string | null };
+type Schedule = { date?: string | null; endDate?: string | null; startTime?: string | null; endTime?: string | null };
 
 /**
  * Takes date/start/end out of the column updates. Since schema v2 they live in task_blocks;
@@ -106,7 +108,11 @@ function normalize(prev: Task | null, cols: Record<string, unknown>): void {
   if ("status" in cols && cols.status !== prev?.status) {
     if (cols.status === "in_progress" && !prev?.startedAt) cols.started_at = nowIso();
     cols.done_at = cols.status === "done" ? nowIso() : null;
+    // Working on a cancelled task again brings it back.
+    if (prev?.cancelledAt && !("cancelled_at" in cols)) cols.cancelled_at = null;
   }
+  // A done task cannot be cancelled (openwiki/requirements.md, Tasks).
+  if (cols.cancelled_at && (cols.status ?? prev?.status) === "done") throw new HttpError(400, "a done task cannot be cancelled");
 }
 
 export function taskRoutes(db: DB): Hono<AppEnv> {
@@ -151,7 +157,15 @@ export function taskRoutes(db: DB): Hono<AppEnv> {
         .run(...(Object.values(cols) as any[]));
       const id = Number(res.lastInsertRowid);
       setAssignees(db, id, assignees);
-      if (schedule?.date) applySchedule(db, getTask(db, id)!, schedule);
+      if (schedule?.date) {
+        applySchedule(db, getTask(db, id)!, schedule);
+        // New task over several days: its one part spans them (no times).
+        const endDate = spanEnd(schedule.date, b.endDate);
+        if (endDate) {
+          const part = getTask(db, id)!.blocks[0];
+          if (part) updateBlockTime(db, part.id, { endDate, startTime: null, endTime: null });
+        }
+      }
       return id;
     });
     const task = getTask(db, id)!;
@@ -187,11 +201,14 @@ export function taskRoutes(db: DB): Hono<AppEnv> {
       if (assignees) setAssignees(db, id, assignees);
       if (schedule) applySchedule(db, getTask(db, id)!, schedule);
       if ("status" in cols && cols.status !== prev.status) followTaskStatus(db, id, cols.status as string);
+      settleDoneTask(db, id);
     });
     const task = getTask(db, id)!;
     recordHistory(db, id, c.get("user").id, diffTask(prev, task));
     emit(c, "task.upsert", task);
-    if (prev.status !== task.status)
+    if (!!prev.cancelledAt !== !!task.cancelledAt)
+      logActivity(db, c, "cancel", "task", id, `"${shortTitle(task)}" ${task.cancelledAt ? "görevini iptal etti" : "görevinin iptalini geri aldı"}`);
+    else if (prev.status !== task.status)
       logActivity(db, c, "status", "task", id, `"${shortTitle(task)}" → ${STATUS_TR[task.status]}`);
     else if (prev.sprintId !== task.sprintId)
       logActivity(db, c, "move", "task", id, `"${shortTitle(task)}" ${task.sprintId ? "sprinte" : "backloga"} taşıdı`);
@@ -231,7 +248,12 @@ export function taskRoutes(db: DB): Hono<AppEnv> {
     const b = await body(c);
     const date = v.date(b.date, "date");
     if (!date) throw new HttpError(400, "date required");
-    const block = addBlock(db, taskId, { date, startTime: v.time(b.startTime, "startTime"), endTime: v.time(b.endTime, "endTime") });
+    const block = addBlock(db, taskId, {
+      date,
+      endDate: spanEnd(date, b.endDate),
+      startTime: v.time(b.startTime, "startTime"),
+      endTime: v.time(b.endTime, "endTime"),
+    });
     recordHistory(db, taskId, c.get("user").id, [
       { field: "part.add", oldValue: null, newValue: { date: block.date, startTime: block.startTime, endTime: block.endTime } },
     ]);
@@ -255,11 +277,13 @@ export function taskRoutes(db: DB): Hono<AppEnv> {
     }
     if ("startTime" in b) time.startTime = v.time(b.startTime, "startTime");
     if ("endTime" in b) time.endTime = v.time(b.endTime, "endTime");
+    if ("endDate" in b) time.endDate = spanEnd((time.date as string) ?? prev.date, b.endDate);
     tx(db, () => {
-      if (Object.keys(time).length) updateBlockTime(db, id, time as { date?: string; startTime?: string | null; endTime?: string | null });
+      if (Object.keys(time).length) updateBlockTime(db, id, time as { date?: string; endDate?: string | null; startTime?: string | null; endTime?: string | null });
       if ("status" in b) {
         if (!["planned", "done", "missed"].includes(b.status)) throw new HttpError(400, "bad status");
         setBlockStatus(db, id, b.status);
+        settleDoneTask(db, prev.taskId);
       }
     });
     const task = getTask(db, prev.taskId)!;

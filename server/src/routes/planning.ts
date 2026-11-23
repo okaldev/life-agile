@@ -131,6 +131,18 @@ export function planningRoutes(db: DB): Hono<AppEnv> {
     );
   });
 
+  /** Links an action to the task made from it ({taskId} or null). */
+  app.patch("/retro/items/:id", async (c) => {
+    const id = idParam(c);
+    const b = await body(c);
+    const taskId = v.int(b.taskId, "taskId", 1, 1e9);
+    if (taskId && !db.prepare("SELECT 1 FROM tasks WHERE id = ?").get(taskId)) throw new HttpError(400, "unknown task");
+    if (!db.prepare("UPDATE retro_items SET task_id = ? WHERE id = ?").run(taskId, id).changes) throw new HttpError(404, "not found");
+    const item = mapRetro(db.prepare("SELECT * FROM retro_items WHERE id = ?").get(id) as any);
+    emit(c, "retro.upsert", item);
+    return c.json(item);
+  });
+
   app.post("/retro/:sprintId", async (c) => {
     const sprintId = idParam(c, "sprintId");
     if (!getSprint(db, sprintId)) throw new HttpError(404, "not found");

@@ -15,6 +15,8 @@ export interface Config {
   timeZone: string;
   /** Link to the source code (AGPL-3.0 §13), shown in the app. */
   sourceUrl: string;
+  /** Public holidays country (HOLIDAYS): "TR" (default) or null for none. */
+  holidays: string | null;
   dbPath: string;
   webDist: string;
   googleClientId: string;
@@ -67,6 +69,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     publicUrlDefault: !env.PUBLIC_URL,
     timeZone: validTimeZone(env.APP_TIMEZONE),
     sourceUrl: env.SOURCE_URL || "https://github.com/okaldev/life-agile",
+    holidays: (env.HOLIDAYS ?? "TR").toUpperCase() === "TR" ? "TR" : null,
     dbPath: env.DB_PATH ?? "data/agile.db",
     webDist: env.WEB_DIST ?? "web/dist",
     googleClientId: env.GOOGLE_CLIENT_ID ?? "",

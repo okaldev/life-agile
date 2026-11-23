@@ -71,31 +71,36 @@ export function TaskRow({
   );
 }
 
-function SortableRow({ task, action }: { task: Task; action?: (t: Task) => ReactNode }) {
+function SortableRow({ task, action, wrap }: { task: Task; action?: (t: Task) => ReactNode; wrap?: RowWrap }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} className={cn(isDragging && "z-10 opacity-70")}>
-      <TaskRow
+      {(wrap ?? ((_t: Task, n: ReactNode) => n))(task, <TaskRow
         task={task}
         action={action?.(task)}
         handle={
-          <button {...attributes} {...listeners} className="cursor-grab touch-none text-muted-foreground" aria-label="Sırala">
+          <button {...attributes} {...listeners} data-sort-handle className="cursor-grab touch-none text-muted-foreground" aria-label="Sırala">
             <GripVertical className="size-4" />
           </button>
         }
-      />
+      />)}
     </div>
   );
 }
+
+/** Optional wrapper around each row (grooming uses it for drag between panes). */
+export type RowWrap = (task: Task, row: ReactNode) => ReactNode;
 
 export function BacklogList({
   tasks,
   mode,
   action,
+  wrap,
 }: {
   tasks: Task[];
   mode: SortMode;
   action?: (t: Task) => ReactNode;
+  wrap?: RowWrap;
 }) {
   const { state, dispatch } = useStore();
   const sensors = useSensors(
@@ -125,7 +130,7 @@ export function BacklogList({
     return (
       <div className="space-y-1.5">
         {sorted.map((t) => (
-          <TaskRow key={t.id} task={t} action={action?.(t)} />
+          <div key={t.id}>{(wrap ?? ((_t: Task, n: ReactNode) => n))(t, <TaskRow task={t} action={action?.(t)} />)}</div>
         ))}
       </div>
     );
@@ -135,7 +140,7 @@ export function BacklogList({
       <SortableContext items={sorted.map((t) => t.id)} strategy={verticalListSortingStrategy}>
         <div className="space-y-1.5">
           {sorted.map((t) => (
-            <SortableRow key={t.id} task={t} action={action} />
+            <SortableRow key={t.id} task={t} action={action} wrap={wrap} />
           ))}
         </div>
       </SortableContext>

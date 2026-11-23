@@ -12,10 +12,18 @@ export function mapBlock(r: Row): TaskBlock {
     id: r.id,
     taskId: r.task_id,
     date: r.date,
+    endDate: r.end_date ?? null,
     startTime: r.start_time ?? null,
     endTime: r.end_time ?? null,
     status: r.status,
   };
+}
+
+/** endDate moved by the same number of days as the start (from -> to). */
+function shiftDate(endDate: string, to: string, from: string): string {
+  const d = new Date(`${endDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000));
+  return d.toISOString().slice(0, 10);
 }
 
 const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
@@ -83,17 +91,20 @@ export function cleanTimes(start: string | null, end: string | null): { start: s
 export function addBlock(
   db: DB,
   taskId: number,
-  b: { date: string; startTime: string | null; endTime: string | null; status?: MarkStatus },
+  b: { date: string; endDate?: string | null; startTime: string | null; endTime: string | null; status?: MarkStatus },
 ): TaskBlock {
-  const { start, end } = cleanTimes(b.startTime, b.endTime);
+  const t = cleanTimes(b.startTime, b.endTime);
+  // A multi-day part has no times.
+  const multi = !!b.endDate && b.endDate > b.date;
+  const [start, end] = multi ? [null, null] : [t.start, t.end];
   const now = nowIso();
   return tx(db, () => {
     const res = db
       .prepare(
-        `INSERT INTO task_blocks (task_id, date, start_time, end_time, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO task_blocks (task_id, date, end_date, start_time, end_time, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(taskId, b.date, start, end, b.status ?? "planned", now, now);
+      .run(taskId, b.date, multi ? b.endDate! : null, start, end, b.status ?? "planned", now, now);
     syncTaskSchedule(db, taskId);
     db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(now, taskId);
     return getBlock(db, Number(res.lastInsertRowid))!;
@@ -103,19 +114,27 @@ export function addBlock(
 export function updateBlockTime(
   db: DB,
   id: number,
-  patch: { date?: string; startTime?: string | null; endTime?: string | null },
+  patch: { date?: string; endDate?: string | null; startTime?: string | null; endTime?: string | null },
 ): TaskBlock | null {
   const prev = getBlock(db, id);
   if (!prev) return null;
   const date = patch.date ?? prev.date;
-  const { start, end } = cleanTimes(
+  // Moving a multi-day part keeps its length.
+  let endDate = patch.endDate !== undefined ? patch.endDate : prev.endDate;
+  if (patch.endDate === undefined && patch.date && prev.endDate) endDate = shiftDate(prev.endDate, patch.date, prev.date);
+  const multi = !!endDate && endDate > date;
+  const t = cleanTimes(
     patch.startTime !== undefined ? patch.startTime : prev.startTime,
     patch.endTime !== undefined ? patch.endTime : prev.endTime,
   );
+  // Setting a time makes it a one-day part again.
+  const timed = patch.startTime != null;
+  const [start, end, last] = multi && !timed ? [null, null, endDate] : [t.start, t.end, null];
   const now = nowIso();
   tx(db, () => {
-    db.prepare("UPDATE task_blocks SET date = ?, start_time = ?, end_time = ?, updated_at = ? WHERE id = ?").run(
+    db.prepare("UPDATE task_blocks SET date = ?, end_date = ?, start_time = ?, end_time = ?, updated_at = ? WHERE id = ?").run(
       date,
+      last,
       start,
       end,
       now,

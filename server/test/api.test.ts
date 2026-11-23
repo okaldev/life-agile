@@ -103,3 +103,27 @@ test("task history records field changes, parts and checklist; new tasks get low
   assert.equal(h.find((e: any) => e.field === "description").newValue, null); // text itself is not stored
   assert.ok(h[0].id > h[h.length - 1].id); // newest first
 });
+
+test("multi-day events and task parts: end date, no times, overlap listing, limits", async () => {
+  const { app, cookie } = setup();
+  const call = async (method: string, path: string, body?: unknown) => {
+    const r = await app.request(path, { method, headers: { cookie, "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+    return { status: r.status, data: (await r.json()) as any };
+  };
+  const ev = await call("POST", "/api/calendar-events", { title: "Tatil", kind: "out", date: "2026-11-27", endDate: "2026-11-30", startTime: "10:00", attendeeIds: [1, 2] });
+  assert.equal(ev.status, 201);
+  const listed = (await call("GET", "/api/calendar-events?from=2026-11-30&to=2026-12-06")).data;
+  assert.deepEqual(listed.map((e: any) => [e.title, e.date, e.endDate, e.startTime]), [["Tatil", "2026-11-27", "2026-11-30", null]]);
+  assert.equal((await call("POST", "/api/calendar-events", { title: "Çok uzun", date: "2026-01-01", endDate: "2026-03-01", attendeeIds: [1] })).status, 400);
+
+  const t = (await call("POST", "/api/tasks", { title: "Proje", assigneeIds: [1], date: "2026-11-23", endDate: "2026-11-26" })).data;
+  assert.deepEqual([t.blocks[0].date, t.blocks[0].endDate, t.blocks[0].startTime], ["2026-11-23", "2026-11-26", null]);
+  // Moving the part keeps its length; a start time makes it a one-day part again.
+  await call("PATCH", `/api/blocks/${t.blocks[0].id}`, { date: "2026-11-25" });
+  const after = (await call("GET", `/api/tasks/${t.id}`)).data;
+  assert.deepEqual([after.blocks[0].date, after.blocks[0].endDate], ["2026-11-25", "2026-11-28"]);
+  await call("PATCH", `/api/blocks/${t.blocks[0].id}`, { startTime: "09:00" });
+  assert.equal((await call("GET", `/api/tasks/${t.id}`)).data.blocks[0].endDate, null);
+  const cal = (await call("GET", "/api/calendar?from=2026-11-24&to=2026-11-30")).data;
+  assert.ok(cal.some((x: any) => x.id === t.id));
+});

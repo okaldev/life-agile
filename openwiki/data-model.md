@@ -23,6 +23,12 @@ Dates are `YYYY-MM-DD` strings in the app time zone (`APP_TIMEZONE`, default Eur
 - Max one `active` and max one `planned` sprint.
 - `scheduled_at` (v7): set when a planned sprint waits to start by itself at 00:00 of `start_date` (`planning_step` is then NULL).
 
+### v8 columns
+- `tasks.cancelled_at`: cancelled task (not done, never carried, not counted; queries use `cancelled_at IS NULL`).
+- `recurring_rules.times_per_week`: "N times a week" rule (see [recurring.md](recurring.md)).
+- `calendar_events.end_date`, `task_blocks.end_date`: inclusive last day of a multi-day item (times are NULL then). Range queries use overlap: `date <= to AND coalesce(end_date, date) >= from`.
+- `retro_items.task_id`: the task made from a retro action (`ON DELETE SET NULL`).
+
 ### sprint_members
 `sprint_id`, `user_id`, `target_sp`, `done_sp_snapshot` (set on close). Primary key (`sprint_id`, `user_id`).
 

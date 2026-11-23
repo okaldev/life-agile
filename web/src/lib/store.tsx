@@ -30,6 +30,7 @@ interface State {
   vapidPublicKey: string | null;
   today: string;
   sourceUrl: string;
+  holidays: string | null;
   view: ViewFilter;
   connected: boolean;
   /** Event counters per type. Page-level data (retro, availability) refetches when its counter changes. */
@@ -63,6 +64,7 @@ const initial: State = {
   vapidPublicKey: null,
   today: "",
   sourceUrl: "",
+  holidays: "TR",
   view: "all",
   connected: false,
   versions: {},
@@ -86,6 +88,7 @@ function reducer(s: State, a: Action): State {
         vapidPublicKey: d.vapidPublicKey,
         today: d.today,
         sourceUrl: d.sourceUrl,
+        holidays: d.holidays,
       };
     }
     case "task":
@@ -216,7 +219,7 @@ export function StoreProvider({ page, children }: { page: string; children: Reac
     };
   }, [page, reload]);
 
-  const patchTask = useCallback(async (id: number, patch: Partial<Task> & { assigneeIds?: number[]; unplanned?: boolean }) => {
+  const patchTask = useCallback(async (id: number, patch: Partial<Task> & { assigneeIds?: number[]; unplanned?: boolean; cancelled?: boolean }) => {
     const prev = stateRef.current.tasks[id];
     if (prev) dispatch({ type: "task", task: { ...prev, ...patch } });
     try {
@@ -229,7 +232,7 @@ export function StoreProvider({ page, children }: { page: string; children: Reac
     }
   }, []);
 
-  const createTask = useCallback(async (body: Partial<Task> & { title: string; assigneeIds: number[] }) => {
+  const createTask = useCallback(async (body: Partial<Task> & { title: string; assigneeIds: number[]; endDate?: string | null }) => {
     const task = await api.post<Task>("/api/tasks", body);
     dispatch({ type: "task", task });
     return task;

@@ -20,7 +20,9 @@ Both users see the same step. `planning_step` is stored on the planned sprint an
 
 ### 1. Retro (`retro`)
 - Shows the active sprint result: SP done vs target per person, carry-over count.
-- Three columns: İyi giden (`good`), Kötü giden (`bad`), Deneyeceğiz (`try`). Both users add and delete items live.
+- Three columns: İyi giden (`good`), Kötü giden (`bad`), Aksiyonlar (`try`). Both users add and delete items live. The text box grows with the text; Enter adds, Shift+Enter makes a new line; on phones a send button adds.
+- An action can become a backlog task with one click (`retro_items.task_id`, v8); the card then shows the task state.
+- Above the columns: the actions of the previous retro with their task state, to check them.
 - Skipped for the first sprint.
 
 ### 2. Grooming (`grooming`)
@@ -28,7 +30,8 @@ Both users see the same step. `planning_step` is stored on the planned sprint an
   1. Moves unfinished tasks (`todo`, `in_progress`) of the active sprint to the planned sprint. It sets `carried_from_sprint_id` and keeps the status. Recurring occurrences of the old week stay in the old sprint. Open occurrences already dated in the new week (`occurrence_date >= new start`) move to the new sprint; they get `carried_from_sprint_id` so cancel can move them back, but they do not count as carry-over.
   2. Generates recurring occurrences for the new week (see [recurring.md](recurring.md)).
 - Left side: backlog (smart sort). Right side: new sprint (carried tasks marked "Devreden", recurring tasks marked "Tekrarlayan").
-- A user moves a task between backlog and sprint, edits it, or creates a new one.
+- A user moves a task between backlog and sprint (desktop: drag a row to the other pane; also arrow buttons), edits it, or creates a new one.
+- From grooming on, "Planlanan hafta" (collapsible, `PlanWeek.tsx`) shows the sprint week day by day: holidays, leave, events, task parts (multi-day items on each of their days) and how many tasks have no calendar place.
 - "Onayla ve puanla" goes to estimation.
 
 ### 3. Estimation (`estimation`)
