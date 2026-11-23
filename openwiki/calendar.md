@@ -19,7 +19,11 @@ Code: `server/src/domain/blocks.ts`, `server/src/domain/events.ts`, `server/src/
 
 ## Long events and long task parts
 
-Timed events and task parts of 8 hours or more (for example "İstanbul'dayım 00:15–23:59" or a 09:00–18:00 work day such as a recurring "mesai") are drawn as a background band over their hours in the day column, not as a column item. Other items keep the full width. Events: hatched band. Task parts: a soft band in the owner's color (shared: neutral) with an owner-color edge (`LongTaskBand`), so two people's work days are easy to tell apart. When several bands share a day, each gets its own lane (the column is split into equal lanes); other items stay full width on top. A small label (photo first, then icon or done check and title; times in the tooltip) sticks just below the day header and opens the item (a task opens with its part line for done / missed); the rest of the band lets clicks and drags reach the grid. Long items cannot be dragged or resized on the grid; edit them in their dialog.
+Timed events and task parts of 8 hours or more (for example "İstanbul'dayım 00:15–23:59" or a 09:00–18:00 work day such as a recurring "mesai") are drawn as a background band over their hours, not as a column item (`LongBand`). Events: hatched band. Task parts: a soft band in the owner's color (shared: neutral) with an owner-color edge.
+
+- Labels: each band has a chip in the all-day row of its day (`BandChip`: photos, title, hours like "09–18"); a click opens the item (a task opens with its part line for done / missed). The grid band has no label, so it never covers the text of other items.
+- Person lanes (`dayLanes`): on a day with bands, when a band and another person's item (or two people's bands) share hours, the column splits into one lane per person (ordered by user id). A person's bands and their own items that overlap a band sit in that person's lane, so someone's class never sits inside the other person's work day; a person's own task may sit inside their own band. Shared items and items outside band hours use the full column.
+- Long items cannot be dragged or resized on the grid; edit them in their dialog.
 
 ## Multi-day items and holidays
 
