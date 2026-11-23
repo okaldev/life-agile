@@ -369,7 +369,8 @@ export default function CalendarPage() {
         (weekSprint === state.activeSprint?.id ? isActiveWork(t, state) : t.sprintId !== null && t.sprintId === weekSprint) &&
         t.status !== "done" &&
         !t.cancelledAt &&
-        !t.missedAt &&
+        // A missed recurring occurrence is over; a normal task with a missed part is still open work.
+        !(t.recurringRuleId && t.missedAt) &&
         // Recurring occurrences have their day, except "N times a week" ones: the user picks it here.
         (!t.recurringRuleId || t.blocks.length === 0) &&
         matchesView(t, state.view),
