@@ -6,15 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import { WEEKDAY_SHORT } from "@/lib/strings";
 import { cn } from "@/lib/utils";
-import { Assignees, AssigneePicker, CategoryDot, EmptyState, SpBadge, SpPicker } from "../common";
+import { Assignees, CategoryDot, EmptyState, SpBadge } from "../common";
 import { useConfirm } from "../ConfirmDialog";
+import { Muted, PopoverValue, taskFields } from "../TaskView";
 
 export type RuleDraft = Omit<RecurringRule, "id"> & { id?: number };
 type Draft = RuleDraft;
@@ -71,134 +70,156 @@ export function RuleForm({
     onClose();
   };
 
+  // Shared pickers of the task view: people, default SP, category.
+  const f = taskFields(
+    { assigneeIds: d.assigneeIds, status: "todo", sp: d.defaultSp, categoryId: d.categoryId, priority: 0, dueDate: null },
+    (p) => {
+      if (p.assigneeIds) set({ assigneeIds: p.assigneeIds });
+      if ("sp" in p) set({ defaultSp: p.sp ?? null });
+      if ("categoryId" in p) set({ categoryId: p.categoryId ?? null });
+    },
+    state,
+  );
+  const freqText = flex
+    ? `Haftada ${d.timesPerWeek} kez`
+    : d.freq === "weekly"
+      ? WEEKDAY_SHORT.filter((_, i) => d.weekdaysMask & (1 << i)).join(", ") || "Gün seçin"
+      : FREQ_LABEL[d.freq];
+  const choice = (active: boolean) =>
+    cn("rounded-md border px-2.5 py-1.5 text-sm", active ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent");
+
   return (
     <form onSubmit={save}>
-      <DialogHeader className="border-b p-4">
-        <DialogTitle>{title ?? (d.id ? "Tekrarlayan görevi düzenle" : "Yeni tekrarlayan görev")}</DialogTitle>
-        <DialogDescription>{hint ?? "Değişiklik bugünden sonraki açık tekrarlara uygulanır."}</DialogDescription>
+      <DialogHeader className="space-y-1 border-b p-4 pr-12">
+        <DialogTitle className={cn(!title && "sr-only")}>{title ?? (d.id ? "Tekrarlayan görevi düzenle" : "Yeni tekrarlayan görev")}</DialogTitle>
+        <DialogDescription className={cn(!hint && "sr-only")}>{hint ?? "Değişiklik bugünden sonraki açık tekrarlara uygulanır."}</DialogDescription>
+        <input
+          autoFocus={!d.title}
+          placeholder="Tekrarlayan görev (örn. Mesaiye git)"
+          value={d.title}
+          onChange={(e) => set({ title: e.target.value })}
+          className="-mx-2 w-[calc(100%+1rem)] rounded-md bg-transparent px-2 py-1 text-lg font-semibold outline-none placeholder:text-muted-foreground/60 focus:bg-accent/40"
+        />
+        <div className="-ml-1 flex flex-wrap items-center text-sm text-muted-foreground">
+          {f.owner("inline")}
+          <span className="px-0.5">·</span>
+          {f.sp("inline")}
+          <span className="px-0.5 text-xs">her tekrar</span>
+        </div>
       </DialogHeader>
       <div className="space-y-4 p-4">
-        <Input autoFocus={!d.title} placeholder="Örn. Mesaiye git" value={d.title} onChange={(e) => set({ title: e.target.value })} />
-        <Textarea placeholder="Açıklama" rows={2} value={d.description} onChange={(e) => set({ description: e.target.value })} />
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Sıklık</Label>
-          <div className="flex flex-wrap gap-1.5">
-            {(Object.keys(FREQ_LABEL) as RecurringFreq[]).map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => set({ freq: f, timesPerWeek: null })}
-                className={cn(
-                  "rounded-md border px-3 py-1.5 text-sm",
-                  !flex && d.freq === f ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent",
-                )}
-              >
-                {FREQ_LABEL[f]}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => set({ freq: "weekly", weekdaysMask: 0, timesPerWeek: d.timesPerWeek ?? 2 })}
-              className={cn("rounded-md border px-3 py-1.5 text-sm", flex ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent")}
-            >
-              Haftada N kez
-            </button>
-          </div>
-          {flex && (
-            <div className="space-y-1.5 pt-1">
-              <div className="flex items-center gap-1.5">
-                {[1, 2, 3, 4, 5, 6].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => set({ timesPerWeek: n })}
-                    className={cn(
-                      "size-8 rounded-md border text-sm",
-                      d.timesPerWeek === n ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent",
-                    )}
-                  >
-                    {n}
-                  </button>
-                ))}
-                <span className="text-sm text-muted-foreground">kez / hafta</span>
-              </div>
-              <p className="text-xs text-muted-foreground">Her sprintte bu kadar günsüz görev oluşur. Günü takvime sürükleyerek siz seçersiniz.</p>
-            </div>
-          )}
-          {!flex && d.freq === "weekly" && (
-            <div className="grid grid-cols-7 gap-1 pt-1">
-              {WEEKDAY_SHORT.map((w, i) => (
-                <button
-                  key={w}
-                  type="button"
-                  onClick={() => set({ weekdaysMask: d.weekdaysMask ^ (1 << i) })}
-                  className={cn(
-                    "rounded-md border py-1.5 text-xs",
-                    d.weekdaysMask & (1 << i) ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent",
-                  )}
-                >
-                  {w}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className={cn("grid grid-cols-2 gap-3", flex && "hidden")}>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Başlangıç (ops.)</Label>
-            <Input type="time" value={d.startTime ?? ""} onChange={(e) => set({ startTime: e.target.value || null })} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Bitiş</Label>
-            <Input
-              type="time"
-              disabled={!d.startTime}
-              value={d.endTime ?? ""}
-              onChange={(e) => set({ endTime: e.target.value || null })}
-            />
-          </div>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Kimin işi</Label>
-          <AssigneePicker value={d.assigneeIds} onChange={(assigneeIds) => set({ assigneeIds })} />
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Kategori</Label>
-            <Select
-              value={d.categoryId ? String(d.categoryId) : "none"}
-              onValueChange={(v) => set({ categoryId: v === "none" ? null : Number(v) })}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Yok</SelectItem>
-                {state.categories
-                  .filter((c) => !c.archived)
-                  .map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>
-                      <CategoryDot category={c} /> {c.name}
-                    </SelectItem>
+        <div className="flex flex-wrap gap-1.5">
+          <PopoverValue
+            look="pill"
+            width="w-80"
+            className={cn(!flex && d.freq === "weekly" && d.weekdaysMask === 0 && "border-amber-500/60 text-amber-700 dark:text-amber-300")}
+            display={
+              <>
+                <Repeat className="size-3.5 text-muted-foreground" />
+                {freqText}
+              </>
+            }
+          >
+            {() => (
+              <div className="space-y-2.5">
+                <div className="flex flex-wrap gap-1.5">
+                  {(Object.keys(FREQ_LABEL) as RecurringFreq[]).map((fr) => (
+                    <button key={fr} type="button" onClick={() => set({ freq: fr, timesPerWeek: null })} className={choice(!flex && d.freq === fr)}>
+                      {FREQ_LABEL[fr]}
+                    </button>
                   ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Varsayılan SP</Label>
-            <SpPicker size="sm" value={d.defaultSp} onChange={(defaultSp) => set({ defaultSp })} />
-          </div>
+                  <button
+                    type="button"
+                    onClick={() => set({ freq: "weekly", weekdaysMask: 0, timesPerWeek: d.timesPerWeek ?? 2 })}
+                    className={choice(flex)}
+                  >
+                    Haftada N kez
+                  </button>
+                </div>
+                {flex && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-1.5">
+                      {[1, 2, 3, 4, 5, 6].map((n) => (
+                        <button key={n} type="button" onClick={() => set({ timesPerWeek: n })} className={cn("size-8", choice(d.timesPerWeek === n))}>
+                          {n}
+                        </button>
+                      ))}
+                      <span className="text-sm text-muted-foreground">kez / hafta</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Her sprintte bu kadar günsüz görev oluşur. Günü takvime sürükleyerek siz seçersiniz.</p>
+                  </div>
+                )}
+                {!flex && d.freq === "weekly" && (
+                  <div className="grid grid-cols-7 gap-1">
+                    {WEEKDAY_SHORT.map((w, i) => (
+                      <button
+                        key={w}
+                        type="button"
+                        onClick={() => set({ weekdaysMask: d.weekdaysMask ^ (1 << i) })}
+                        className={cn("rounded-md border py-1.5 text-xs", d.weekdaysMask & (1 << i) ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent")}
+                      >
+                        {w}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </PopoverValue>
+          {!flex && (
+            <PopoverValue
+              look="pill"
+              width="w-64"
+              display={
+                <>
+                  <Clock className="size-3.5 text-muted-foreground" />
+                  {d.startTime ? `${d.startTime}${d.endTime ? `–${d.endTime}` : ""}` : <Muted>Saat yok · tüm gün</Muted>}
+                </>
+              }
+            >
+              {() => (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Başlangıç</Label>
+                    <Input type="time" value={d.startTime ?? ""} onChange={(e) => set({ startTime: e.target.value || null })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Bitiş</Label>
+                    <Input type="time" disabled={!d.startTime} value={d.endTime ?? ""} onChange={(e) => set({ endTime: e.target.value || null })} />
+                  </div>
+                </div>
+              )}
+            </PopoverValue>
+          )}
+          {f.category("pill")}
+          <button
+            type="button"
+            onClick={() => set({ active: !d.active })}
+            aria-pressed={d.active}
+            className={cn(
+              "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs",
+              d.active ? "hover:bg-accent" : "border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+            )}
+            title="Durdurulan kural yeni tekrar oluşturmaz"
+          >
+            <span className={cn("size-2 rounded-full", d.active ? "bg-emerald-500" : "bg-amber-500")} />
+            {d.active ? "Aktif" : "Durduruldu"}
+          </button>
         </div>
-        <label className="flex items-center gap-2 text-sm">
-          <Switch checked={d.active} onCheckedChange={(active) => set({ active })} /> Aktif
-        </label>
+        <Textarea
+          placeholder="Açıklama ekle…"
+          rows={2}
+          value={d.description}
+          onChange={(e) => set({ description: e.target.value })}
+          className="resize-none border-dashed shadow-none"
+        />
       </div>
       <DialogFooter className="border-t p-4">
         <Button type="button" variant="ghost" onClick={onClose}>
           Vazgeç
         </Button>
         <Button type="submit" disabled={!valid}>
-          Kaydet
+          {d.id ? "Kaydet" : "Oluştur"}
         </Button>
       </DialogFooter>
     </form>

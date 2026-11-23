@@ -11,6 +11,8 @@ Code: `server/src/domain/recurrence.ts`, `server/src/routes/recurring.ts`.
 - Assignees: one or both users. Category. `default_sp`.
 - "Haftada N kez" (`times_per_week`, v8, 1–7): no fixed days and no time (`freq=weekly`, mask 0). Each sprint gets N undated occurrences with `occurrence_date = "<week start>#<n>"` (unique per rule; sorts inside its week). The user drags them from the calendar side list onto a day. Unfinished ones are marked missed when the sprint closes, like other occurrences. Cards show "n/N".
 
+Form (`RuleForm`, `web/src/components/app/recurring/RecurringPage.tsx`): the task view layout. Title; "people · default SP" as plain text with the shared pickers; badges for frequency (popover: every day, weekdays, chosen days, N times a week), time, category and Aktif / Durduruldu; description. The same form converts a task ("Tekrarlayana çevir").
+
 ## Occurrence generation
 
 `occurrenceDates(rule, weekStart)` returns the dates of the rule in the week (Monday..Sunday).
