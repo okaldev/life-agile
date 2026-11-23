@@ -21,7 +21,7 @@ Code: `server/src/domain/blocks.ts`, `server/src/domain/events.ts`, `server/src/
 
 Timed events and task parts of 8 hours or more (for example "İstanbul'dayım 00:15–23:59" or a 09:00–18:00 work day such as a recurring "mesai") are drawn as a background band over their hours, not as a column item (`LongBand`). Events: hatched band. Task parts: a soft band in the owner's color (shared: neutral) with an owner-color edge.
 
-- Labels: each band has a title like a task item (title, then hours; photos top right when the lane is wide enough) at its start. When an item drawn over the band covers that place, the label moves down to the first free place in the band (`freeLabelMinute`), so labels never cover the text of other items. A click opens the item (a task opens with its part line for done / missed).
+- Labels: each band has a title like a task item (title, then hours; photos top right when the lane is wide enough) at its start. When an item drawn over the band covers that place, the label moves down to the first free place in the band, 6 px below that item (`freeLabelMinute`), so labels never cover the text of other items. A click opens the item (a task opens with its part line for done / missed).
 - Person lanes (`dayLanes`): on a day with bands, when a band and another person's item (or two people's bands) share hours, the column splits into one lane per person (ordered by user id). A person's bands and their own items that overlap a band sit in that person's lane, so someone's class never sits inside the other person's work day; a person's own task may sit inside their own band. Shared items and items outside band hours use the full column.
 - Long items cannot be dragged or resized on the grid; edit them in their dialog.
 

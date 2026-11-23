@@ -243,13 +243,19 @@ function ItemBox({
 /** Height of a band label (title and hours) in minutes of the grid. */
 const LABEL_MIN = (30 / HOUR_PX) * 60;
 
+/** Space between a moved band label and the item above it, in minutes of the grid (6 px). */
+const LABEL_GAP_MIN = (6 / HOUR_PX) * 60;
+
 /** First minute inside the band where its label does not cover an item drawn over it (else the band start). */
 function freeLabelMinute(band: Item, over: Item[]): number {
   let t = itemStart(band);
   for (;;) {
-    const hit = over.find((x) => itemStart(x) < t + LABEL_MIN && itemEnd(x) > t);
+    // Drawn end: short items are at least 18 px tall on the grid.
+    const drawnEnd = (x: Item) => Math.max(itemEnd(x), itemStart(x) + (18 / HOUR_PX) * 60);
+    const hit = over.find((x) => itemStart(x) < t + LABEL_MIN && drawnEnd(x) > t);
     if (!hit) return t;
-    t = itemEnd(hit);
+    // Below the covering item, with a small gap so the two titles do not touch.
+    t = drawnEnd(hit) + LABEL_GAP_MIN;
     if (t + LABEL_MIN > itemEnd(band)) return itemStart(band);
   }
 }
@@ -831,10 +837,9 @@ export default function CalendarPage() {
                         key={it.key}
                         item={it}
                         unmarked={unmarkedKeys.has(it.key)}
-                        // 1 px off each end: items that follow each other get a small gap.
                         style={{
-                          top: top + 1,
-                          height: Math.max(height - 2, 16),
+                          top,
+                          height,
                           left: `calc(${base} + (${span} - 4px) * ${l.col / l.cols} + 2px)`,
                           width: `calc((${span} - 4px) / ${l.cols} - 2px)`,
                         }}
