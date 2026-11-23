@@ -1,21 +1,21 @@
 // Create / edit a general calendar event (optionally repeating).
 import type { CalendarEvent, EventKind, MarkStatus, RecurringFreq } from "@shared/types.ts";
-import { Repeat, Trash2 } from "lucide-react";
+import { CalendarDays, Repeat, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
+import { fmt, shortDate } from "@/lib/dates";
 import { useStore } from "@/lib/store";
 import { WEEKDAY_SHORT } from "@/lib/strings";
 import { cn } from "@/lib/utils";
-import { AssigneePicker } from "../common";
 import { EVENT_KINDS, EVENT_STATUS_LABEL } from "./eventMeta";
 import { useConfirm } from "../ConfirmDialog";
 import { DatePicker } from "../DatePicker";
+import { Choice, Muted, PopoverValue, taskFields } from "../TaskView";
 
 export interface EventDraft {
   id?: number;
@@ -123,95 +123,159 @@ export function EventForm({ draft, onClose }: { draft: EventDraft; onClose: () =
     onClose();
   };
 
+  const people = taskFields(
+    { assigneeIds: d.attendeeIds, status: "todo", sp: null, categoryId: null, priority: 0, dueDate: null },
+    (p) => p.assigneeIds && set({ attendeeIds: p.assigneeIds }),
+    state,
+  ).owner;
+  const kind = EVENT_KINDS.find((k) => k.kind === d.kind) ?? EVENT_KINDS[0];
+  const when = d.endDate
+    ? `${shortDate(d.date)} – ${shortDate(d.endDate)}`
+    : `${fmt(d.date, "d MMM, EEE")}${d.startTime ? ` ${d.startTime}${d.endTime ? `–${d.endTime}` : ""}` : " · tüm gün"}`;
+  const repeatText =
+    repeat === "none"
+      ? null
+      : repeat === "weekly"
+        ? WEEKDAY_SHORT.filter((_, i) => mask & (1 << i)).join(", ") || "gün seçin"
+        : REPEAT_LABEL[repeat];
+
   return (
     <form onSubmit={save}>
-      <DialogHeader className="border-b p-4">
-        <DialogTitle>{editing ? "Etkinlik" : "Yeni etkinlik"}</DialogTitle>
-        <DialogDescription>Etkinlikler sprintten bağımsızdır, SP'ye sayılmaz.</DialogDescription>
+      <DialogHeader className="space-y-1 border-b p-4 pr-12">
+        <DialogTitle className="sr-only">{editing ? "Etkinlik" : "Yeni etkinlik"}</DialogTitle>
+        <DialogDescription className="sr-only">Etkinlikler sprintten bağımsızdır, SP'ye sayılmaz.</DialogDescription>
+        <input
+          autoFocus={!editing}
+          placeholder="Etkinlik adı (örn. Arkadaşlarla yemek)"
+          value={d.title}
+          onChange={(e) => set({ title: e.target.value })}
+          className="-mx-2 w-[calc(100%+1rem)] rounded-md bg-transparent px-2 py-1 text-lg font-semibold outline-none placeholder:text-muted-foreground/60 focus:bg-accent/40"
+        />
+        <div className="-ml-1 flex flex-wrap items-center text-sm text-muted-foreground">
+          <Choice
+            look="inline"
+            value={d.kind}
+            options={EVENT_KINDS.map((k) => ({ key: k.kind, value: k.kind, label: (<><k.icon className="size-3.5" style={{ color: k.color }} /> {k.label}</>) }))}
+            onSelect={(k) => set({ kind: k })}
+            display={<><kind.icon className="size-3.5" style={{ color: kind.color }} /> {kind.label}</>}
+          />
+          <span className="px-0.5">·</span>
+          {people("inline")}
+          {editing && (
+            <>
+              <span className="px-0.5">·</span>
+              <Choice
+                look="inline"
+                value={d.status}
+                options={(["planned", "done", "missed"] as MarkStatus[]).map((st) => ({ key: st, value: st, label: <>{EVENT_STATUS_LABEL[st]}</> }))}
+                onSelect={(st) => set({ status: st })}
+                display={
+                  <span className={cn(d.status === "done" && "text-emerald-600 dark:text-emerald-400", d.status === "missed" && "text-red-600 dark:text-red-400")}>
+                    {EVENT_STATUS_LABEL[d.status]}
+                  </span>
+                }
+              />
+            </>
+          )}
+        </div>
       </DialogHeader>
       <div className="space-y-4 p-4">
-        <Input autoFocus={!editing} placeholder="Örn. Arkadaşlarla yemek" value={d.title} onChange={(e) => set({ title: e.target.value })} />
         <div className="flex flex-wrap gap-1.5">
-          {EVENT_KINDS.map((k) => (
-            <Chip key={k.kind} active={d.kind === k.kind} onClick={() => set({ kind: k.kind })}>
-              <k.icon className="size-3.5" /> {k.label}
-            </Chip>
-          ))}
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Kim</Label>
-          <AssigneePicker value={d.attendeeIds} onChange={(attendeeIds) => set({ attendeeIds })} />
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          <div className="col-span-3 space-y-1.5 sm:col-span-1">
-            <Label className="text-xs text-muted-foreground">Gün</Label>
-            <DatePicker value={d.date} disabled={wholeSeries} onChange={(date) => date && set({ date })} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Başlangıç</Label>
-            <Input type="time" value={d.startTime ?? ""} onChange={(e) => set({ startTime: e.target.value || null })} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Bitiş</Label>
-            <Input type="time" disabled={!d.startTime} value={d.endTime ?? ""} onChange={(e) => set({ endTime: e.target.value || null })} />
-          </div>
-        </div>
-        {!d.startTime && repeat === "none" && !draft.ruleId ? (
-          <div className="-mt-1 grid grid-cols-3 gap-3">
-            <div className="col-span-3 space-y-1.5 sm:col-span-1">
-              <Label className="text-xs text-muted-foreground">Bitiş günü (ops.)</Label>
-              <DatePicker clearable placeholder="Tek gün" value={d.endDate} onChange={(endDate) => set({ endDate: endDate && endDate > d.date ? endDate : null })} />
-            </div>
-            <p className="col-span-3 self-end text-xs text-muted-foreground sm:col-span-2">Saat boşsa tüm gün sayılır. Bitiş günü seçerseniz takvimde günler boyunca tek çubuk olur.</p>
-          </div>
-        ) : (
-          <p className="-mt-2 text-xs text-muted-foreground">Saat boşsa tüm gün sayılır.</p>
-        )}
-        {!editing && (
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Tekrar</Label>
-            <div className="flex flex-wrap gap-1.5">
-              {(Object.keys(REPEAT_LABEL) as Repeat[]).map((r) => (
-                <Chip key={r} active={repeat === r} onClick={() => setRepeat(r)}>
-                  {REPEAT_LABEL[r]}
-                </Chip>
-              ))}
-            </div>
-            {repeat === "weekly" && (
-              <div className="grid grid-cols-7 gap-1 pt-1">
-                {WEEKDAY_SHORT.map((w, i) => (
-                  <button
-                    key={w}
-                    type="button"
-                    onClick={() => setMask(mask ^ (1 << i))}
-                    className={cn("rounded-md border py-1.5 text-xs", mask & (1 << i) ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent")}
-                  >
-                    {w}
-                  </button>
-                ))}
+          <PopoverValue
+            look="pill"
+            width="w-72"
+            display={
+              <>
+                <CalendarDays className="size-3.5 text-muted-foreground" />
+                {when}
+              </>
+            }
+          >
+            {() => (
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Gün</Label>
+                  <DatePicker value={d.date} disabled={wholeSeries} onChange={(date) => date && set({ date, endDate: d.endDate && d.endDate > date ? d.endDate : null })} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Başlangıç</Label>
+                    <Input type="time" disabled={!!d.endDate} value={d.startTime ?? ""} onChange={(e) => set({ startTime: e.target.value || null })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Bitiş</Label>
+                    <Input type="time" disabled={!d.startTime} value={d.endTime ?? ""} onChange={(e) => set({ endTime: e.target.value || null })} />
+                  </div>
+                </div>
+                {!d.startTime && repeat === "none" && !draft.ruleId && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Bitiş günü (birden çok gün)</Label>
+                    <DatePicker clearable placeholder="Tek gün" value={d.endDate} onChange={(endDate) => set({ endDate: endDate && endDate > d.date ? endDate : null })} />
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">Saat boşsa tüm gün sayılır.</p>
               </div>
             )}
-          </div>
-        )}
-        {editing && (
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Durum</Label>
-            <div className="flex flex-wrap gap-1.5">
-              {(["planned", "done", "missed"] as MarkStatus[]).map((s) => (
-                <Chip key={s} active={d.status === s} onClick={() => set({ status: s })}>
-                  {EVENT_STATUS_LABEL[s]}
-                </Chip>
-              ))}
-            </div>
-          </div>
-        )}
-        <Textarea placeholder="Not" rows={2} value={d.note} onChange={(e) => set({ note: e.target.value })} />
-        {editing && draft.ruleId && (
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox checked={wholeSeries} onCheckedChange={(v) => setWholeSeries(!!v)} />
-            <Repeat className="size-3.5" /> Değişikliği tüm seriye uygula (gelecek tekrarlar)
-          </label>
-        )}
+          </PopoverValue>
+          {!editing && (
+            <PopoverValue
+              look="pill"
+              width="w-72"
+              display={
+                <>
+                  <Repeat className="size-3.5 text-muted-foreground" />
+                  {repeatText ?? <Muted>Tekrar yok</Muted>}
+                </>
+              }
+            >
+              {() => (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    {(Object.keys(REPEAT_LABEL) as Repeat[]).map((r) => (
+                      <Chip key={r} active={repeat === r} onClick={() => setRepeat(r)}>
+                        {REPEAT_LABEL[r]}
+                      </Chip>
+                    ))}
+                  </div>
+                  {repeat === "weekly" && (
+                    <div className="grid grid-cols-7 gap-1">
+                      {WEEKDAY_SHORT.map((w, i) => (
+                        <button
+                          key={w}
+                          type="button"
+                          onClick={() => setMask(mask ^ (1 << i))}
+                          className={cn("rounded-md border py-1.5 text-xs", mask & (1 << i) ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent")}
+                        >
+                          {w}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </PopoverValue>
+          )}
+          {editing && draft.ruleId && (
+            <button
+              type="button"
+              onClick={() => setWholeSeries(!wholeSeries)}
+              aria-pressed={wholeSeries}
+              className={cn(
+                "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs",
+                wholeSeries ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent",
+              )}
+            >
+              <Repeat className="size-3.5" /> {wholeSeries ? "Tüm seriye uygulanacak" : "Sadece bu tekrar"}
+            </button>
+          )}
+        </div>
+        <Textarea
+          placeholder="Not ekle…"
+          rows={2}
+          value={d.note}
+          onChange={(e) => set({ note: e.target.value })}
+          className="resize-none border-dashed shadow-none"
+        />
       </div>
       <DialogFooter className="flex-row flex-wrap justify-between gap-2 border-t p-4 sm:justify-between">
         <div className="flex gap-1">
@@ -231,7 +295,7 @@ export function EventForm({ draft, onClose }: { draft: EventDraft; onClose: () =
             Vazgeç
           </Button>
           <Button type="submit" disabled={!valid}>
-            Kaydet
+            {editing ? "Kaydet" : "Oluştur"}
           </Button>
         </div>
       </DialogFooter>

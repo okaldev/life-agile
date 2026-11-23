@@ -40,6 +40,7 @@
 - Events are information only: no SP, no metrics. The estimation step shows event hours per person and the target suggestion subtracts them (8 h = 1 day).
 - An event can be marked Gerçekleşti / Gerçekleşmedi.
 - A one-off event without time can last several days (end date); it shows as one bar across the days.
+- The event form has the task view layout: title, then "kind · people · status" as plain text with pickers, then badges (day and time or several days, repeat, "only this occurrence / whole series") and a note.
 
 ## Task dialog
 
