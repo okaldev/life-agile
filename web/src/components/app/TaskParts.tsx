@@ -3,12 +3,12 @@ import type { Task, TaskBlock } from "@shared/types.ts";
 import { Check, MoveRight, Plus, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { useConfirm } from "./ConfirmDialog";
 import { DatePicker } from "./DatePicker";
+import { TimePicker } from "./TimePicker";
 
 function PartRow({ block, index }: { block: TaskBlock; index: number }) {
   const patch = (body: Partial<TaskBlock>) => void api.patch(`/api/blocks/${block.id}`, body);
@@ -28,19 +28,19 @@ function PartRow({ block, index }: { block: TaskBlock; index: number }) {
           value={block.date}
           onChange={(date) => date && date !== block.date && patch({ date })}
         />
-        <Input
-          type="time"
-          defaultValue={block.startTime ?? ""}
+        <TimePicker
+          size="sm"
+          value={block.startTime}
           disabled={!!block.endDate}
-          className="h-8 w-[5.5rem] px-2"
-          onBlur={(e) => (e.target.value || null) !== block.startTime && patch({ startTime: e.target.value || null })}
+          className="h-8 w-[6.5rem] px-2"
+          onChange={(startTime) => startTime !== block.startTime && patch({ startTime })}
         />
-        <Input
-          type="time"
-          defaultValue={block.endTime ?? ""}
+        <TimePicker
+          size="sm"
+          value={block.endTime} near={block.startTime}
           disabled={!block.startTime}
-          className="h-8 w-[5.5rem] px-2"
-          onBlur={(e) => (e.target.value || null) !== block.endTime && patch({ endTime: e.target.value || null })}
+          className="h-8 w-[6.5rem] px-2"
+          onChange={(endTime) => endTime !== block.endTime && patch({ endTime })}
         />
         {/* Fixed-width toggle: ✓ done, ✕ missed. A click on the active one sets the part back to planned. */}
         <div className="flex h-8 overflow-hidden rounded-md border" role="group" aria-label="Parça durumu">

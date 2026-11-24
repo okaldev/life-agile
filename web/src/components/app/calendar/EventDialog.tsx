@@ -4,7 +4,6 @@ import { CalendarDays, Repeat, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
@@ -15,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { EVENT_KINDS, EVENT_STATUS_LABEL } from "./eventMeta";
 import { useConfirm } from "../ConfirmDialog";
 import { DatePicker } from "../DatePicker";
+import { TimePicker } from "../TimePicker";
 import { Choice, Muted, PopoverValue, taskFields } from "../TaskView";
 
 export interface EventDraft {
@@ -200,11 +200,11 @@ export function EventForm({ draft, onClose }: { draft: EventDraft; onClose: () =
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Başlangıç</Label>
-                    <Input type="time" disabled={!!d.endDate} value={d.startTime ?? ""} onChange={(e) => set({ startTime: e.target.value || null })} />
+                    <TimePicker disabled={!!d.endDate} value={d.startTime} onChange={(startTime) => set({ startTime })} />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Bitiş</Label>
-                    <Input type="time" disabled={!d.startTime} value={d.endTime ?? ""} onChange={(e) => set({ endTime: e.target.value || null })} />
+                    <TimePicker disabled={!d.startTime} value={d.endTime} near={d.startTime} onChange={(endTime) => set({ endTime })} />
                   </div>
                 </div>
                 {!d.startTime && repeat === "none" && !draft.ruleId && (

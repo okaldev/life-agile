@@ -4,7 +4,7 @@ import { Clock, Plus, Repeat, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { TimePicker } from "../TimePicker";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
@@ -181,11 +181,11 @@ export function RuleForm({
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Başlangıç</Label>
-                    <Input type="time" value={d.startTime ?? ""} onChange={(e) => set({ startTime: e.target.value || null })} />
+                    <TimePicker value={d.startTime} onChange={(startTime) => set({ startTime })} />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Bitiş</Label>
-                    <Input type="time" disabled={!d.startTime} value={d.endTime ?? ""} onChange={(e) => set({ endTime: e.target.value || null })} />
+                    <TimePicker disabled={!d.startTime} value={d.endTime} near={d.startTime} onChange={(endTime) => set({ endTime })} />
                   </div>
                 </div>
               )}

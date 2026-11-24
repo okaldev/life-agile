@@ -4,12 +4,12 @@ import { CalendarDays, Layers3 } from "lucide-react";
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { shortDate } from "@/lib/dates";
 import { focusTask, useStore } from "@/lib/store";
 import { DatePicker } from "./DatePicker";
+import { TimePicker } from "./TimePicker";
 import { Choice, Muted, PopoverValue, taskFields, TaskView } from "./TaskView";
 
 export type TaskDraft = Partial<Task> & { assigneeIds?: number[]; unplanned?: boolean; endDate?: string | null };
@@ -204,11 +204,11 @@ function ScheduleBadge({ task, onChange }: { task: TaskDraft; onChange: (patch: 
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Başlangıç</Label>
-              <Input type="time" disabled={!task.date || !!task.endDate} value={task.startTime ?? ""} onChange={(e) => onChange({ startTime: e.target.value || null })} />
+              <TimePicker disabled={!task.date || !!task.endDate} value={task.startTime} onChange={(startTime) => onChange({ startTime })} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Bitiş</Label>
-              <Input type="time" disabled={!task.startTime} value={task.endTime ?? ""} onChange={(e) => onChange({ endTime: e.target.value || null })} />
+              <TimePicker disabled={!task.startTime} value={task.endTime} near={task.startTime} onChange={(endTime) => onChange({ endTime })} />
             </div>
           </div>
         </div>
